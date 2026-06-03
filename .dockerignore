@@ -1,0 +1,42 @@
+# IDE
+.idea
+.vscode
+
+# Python
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.mypy_cache
+.pytest_cache
+
+# Env & config
+.env
+.env.template
+.flake8
+.python-version
+
+# Git
+.git
+.gitignore
+
+# Docs & meta
+# NOTE: README.md is NOT ignored — pyproject.toml references it (readme = ...)
+# and the Dockerfile COPYs it for `pip install -e .`.
+LICENSE
+AGENTS.md
+.dockerignore
+
+# Logs & data
+*.log
+*.json
+
+# Debug artifacts
+debug_*.png
+after_login.png
+*.screenshot.png
+
+# Dev compose / k8s manifests
+docker-compose.dev.yml
+kubernetes-manifests/deployment.dev.yaml

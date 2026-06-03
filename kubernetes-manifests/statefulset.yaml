@@ -1,0 +1,118 @@
+# M-Team CLI — 保活调度的 Kubernetes 部署（有状态）
+#
+# 为什么用 StatefulSet 而不是 Deployment：
+#   保活的核心状态是每账户的登录态（localStorage 快照，存于 /app/data/auth）。
+#   它必须在 Pod 重建后存活，且同一时刻只能有一个实例持有（避免并发刷新登录
+#   态互相挤掉）。这正是 StatefulSet + volumeClaimTemplates 的语义。
+#
+# 为什么没有 Service 对象：
+#   本应用是纯后台 worker，没有对外端口，也不需要 Pod 间寻址。serviceName 是
+#   schema 必填字段，但其指向的 headless Service 存不存在不影响 Pod 运行。
+#
+# 登录是全自动的（TOTP，无需扫码）：容器跑 `mteam-cli schedule`，每账户在随机
+# 时刻自动以「localStorage → 账号密码+TOTP」登录保活。
+#
+# 部署：
+#   1. 填好下面的账户 + 通知配置（生产建议抽到 Secret）
+#   2. kubectl apply -f kubernetes-manifests/statefulset.yaml
+#   3. kubectl logs -f mteam-cli-0   # 看调度心跳
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mteam-cli
+  labels:
+    app: mteam-cli
+spec:
+  serviceName: mteam-cli
+  replicas: 1
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app: mteam-cli
+  template:
+    metadata:
+      labels:
+        app: mteam-cli
+    spec:
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: mteam-cli
+          image: bitwild/mteam-cli:latest
+          imagePullPolicy: IfNotPresent
+          command: ["mteam-cli", "schedule"]
+          env:
+            - name: TZ
+              value: Asia/Shanghai
+            - name: MTEAM_HEADLESS
+              value: "true"
+            # ── 账户 1：凭证 + 通知接收端（生产请用 Secret）─────────
+            - name: MTEAM_USERNAME_1
+              value: user1
+            - name: MTEAM_PASSWORD_1
+              value: pass1
+            - name: MTEAM_TOTP_SECRET_1
+              value: totp1
+            - name: MTEAM_API_KEY_1
+              value: apikey1
+            # 账户 1 的通知（各渠道 opt-in）
+            - name: NOTIFY_TELEGRAM_TOKEN_1
+              value: ""
+            - name: NOTIFY_TELEGRAM_CHAT_ID_1
+              value: ""
+            - name: NOTIFY_FEISHU_TOKEN_1
+              value: ""
+            - name: NOTIFY_SMTP_TO_1
+              value: ""
+            # ── SMTP 服务器（全局，所有账户共享）─────────────────────
+            - name: NOTIFY_SMTP_HOST
+              value: ""
+            - name: NOTIFY_SMTP_PORT
+              value: "465"
+            - name: NOTIFY_SMTP_USER
+              value: ""
+            - name: NOTIFY_SMTP_PASSWORD
+              value: ""
+            - name: NOTIFY_SMTP_FROM
+              value: ""
+            - name: NOTIFY_SMTP_USE_TLS
+              value: "true"
+            # ── 定时调度（全局）─────────────────────────────────────
+            - name: MTEAM_SCHEDULE_WINDOW
+              value: 09:00-11:00
+            - name: MTEAM_SCHEDULE_PRE_DELAY_RANGE
+              value: 10-300
+            - name: MTEAM_SCHEDULE_HEARTBEAT_HOURS
+              value: "1"
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "mteam-cli schedule"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command: ["pgrep", "-f", "mteam-cli schedule"]
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

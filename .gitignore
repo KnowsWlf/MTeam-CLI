@@ -1,0 +1,27 @@
+.idea
+.vscode
+.env
+.venv
+.flake8
+.python-version
+
+*.log
+*.json
+
+# Tool indexes
+.codegraph/
+
+# Python build artifacts
+__pycache__/
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+
+# Runtime data (login snapshots, logs, inspect artifacts)
+data/auth/*.json
+data/logs/
+data/artifacts/
+
+docker-compose.dev.yml
+kubernetes-manifests/deployment.dev.yaml

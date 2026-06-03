@@ -1,0 +1,29 @@
+# Playwright-python image ships Chromium + system fonts + zh-CN locale.
+# Pin the tag to match the playwright pip version range in pyproject.toml.
+FROM mcr.microsoft.com/playwright/python:v1.60.0-noble
+
+# TZ must be set so the `schedule` library interprets HH:MM as Asia/Shanghai,
+# not UTC.
+ENV TZ=Asia/Shanghai \
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+WORKDIR /app
+
+# Install python deps first to leverage layer caching.
+COPY pyproject.toml README.md ./
+COPY src ./src
+RUN pip install -e .
+
+# Persistent state lives here — mount as a named volume (compose) or PVC (k8s)
+# so the per-account localStorage snapshots and logs survive container rebuilds.
+RUN mkdir -p /app/data/auth /app/data/logs /app/data/artifacts \
+    && chown -R pwuser:pwuser /app
+
+USER pwuser
+
+# Default: the long-running daily scheduler (all accounts).
+CMD ["mteam-cli", "schedule"]
