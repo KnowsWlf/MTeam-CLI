@@ -36,10 +36,11 @@ spec:
         app: mteam-cli
     spec:
       securityContext:
-        # pwuser in the Playwright image is uid/gid 1000; the app runs as it.
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        # pwuser in the Playwright image is uid/gid 1001 (uid 1000 is `ubuntu`);
+        # the app runs as pwuser, so all of these must be 1001.
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
       # A freshly-provisioned PVC mounts root-owned and overlays the image's
       # build-time chown, so the non-root app can't write /app/data. fsGroup
       # fixes group perms on most CSI drivers but some ignore it — this
@@ -47,7 +48,7 @@ spec:
       initContainers:
         - name: fix-data-perms
           image: busybox:1.36
-          command: ["sh", "-c", "chown -R 1000:1000 /app/data"]
+          command: ["sh", "-c", "chown -R 1001:1001 /app/data"]
           securityContext:
             runAsUser: 0
           volumeMounts:
