@@ -57,6 +57,7 @@ class Account:
     telegram_chat_id: str | None = None
     feishu_token: str | None = None
     smtp_to: str | None = None  # recipient(s); server config lives on Settings
+    digest_enabled: bool = False
 
     @property
     def safe_name(self) -> str:
@@ -103,6 +104,11 @@ class Settings:
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_tls: bool = True
+    # ── digest（高分新片摘要，全局参数）──
+    digest_min_imdb: float = 8.0
+    digest_types: list[str] = field(default_factory=lambda: ["movie", "tvshow"])
+    digest_hours: int = 24
+    digest_limit: int = 10
     # ── schedule (global infra knobs) ──
     schedule_window: str = "09:00-11:00"
     schedule_pre_delay_range: str = "10-300"
@@ -126,6 +132,14 @@ class Settings:
             smtp_password=os.getenv("NOTIFY_SMTP_PASSWORD", ""),
             smtp_from=os.getenv("NOTIFY_SMTP_FROM", "").strip(),
             smtp_use_tls=_env_bool("NOTIFY_SMTP_USE_TLS", True),
+            digest_min_imdb=float(os.getenv("MTEAM_DIGEST_MIN_IMDB", "8.0")),
+            digest_types=[
+                t.strip()
+                for t in os.getenv("MTEAM_DIGEST_TYPES", "movie,tvshow").split(",")
+                if t.strip()
+            ],
+            digest_hours=_env_int("MTEAM_DIGEST_HOURS", 24),
+            digest_limit=_env_int("MTEAM_DIGEST_LIMIT", 10),
             schedule_window=os.getenv("MTEAM_SCHEDULE_WINDOW", "09:00-11:00").strip(),
             schedule_pre_delay_range=os.getenv("MTEAM_SCHEDULE_PRE_DELAY_RANGE", "10-300").strip(),
             schedule_heartbeat_hours=_env_int("MTEAM_SCHEDULE_HEARTBEAT_HOURS", 1),
@@ -155,6 +169,7 @@ class Settings:
                     telegram_chat_id=_suffixed("NOTIFY_TELEGRAM_CHAT_ID", i),
                     feishu_token=_suffixed("NOTIFY_FEISHU_TOKEN", i),
                     smtp_to=smtp_to,
+                    digest_enabled=_env_bool(f"MTEAM_DIGEST_ENABLED_{i}", False),
                 )
             )
             i += 1
