@@ -17,6 +17,9 @@ dependencies = [
   "python-dotenv>=1.0.0",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=8.0,<9"]
+
 [project.scripts]
 mteam-cli = "mteam_cli.cli.main:main"
 
