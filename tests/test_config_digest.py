@@ -64,7 +64,7 @@ def test_coalesce_keeps_falsey_zero():
 
 
 def test_digest_config_is_frozen():
-    cfg = DigestConfig(types=["movie"], min_imdb=8.0, hours=24, limit=10)
+    cfg = DigestConfig(types=["movie"], min_imdb=8.0, hours=24, limit=10, min_seeders=30)
     assert cfg.types == ["movie"]
     assert cfg.min_imdb == 8.0
     try:
@@ -146,6 +146,41 @@ def test_resolved_config_zero_imdb_not_swallowed(monkeypatch):
     cfg = s.accounts[0].resolved_digest_config(s)
     assert cfg.min_imdb == 0.0          # 不被 _coalesce 当假值吞掉
     assert cfg.limit == 0
+
+
+def test_digest_global_min_seeders_default(monkeypatch):
+    s = _reload_settings(monkeypatch, {
+        "MTEAM_USERNAME_1": "u1", "MTEAM_API_KEY_1": "k1",
+    })
+    assert s.digest_min_seeders == 30
+    assert s.accounts[0].resolved_digest_config(s).min_seeders == 30
+
+
+def test_digest_global_min_seeders_override(monkeypatch):
+    s = _reload_settings(monkeypatch, {
+        "MTEAM_USERNAME_1": "u1", "MTEAM_API_KEY_1": "k1",
+        "MTEAM_DIGEST_MIN_SEEDERS": "100",
+    })
+    assert s.digest_min_seeders == 100
+
+
+def test_resolved_config_min_seeders_account_override(monkeypatch):
+    s = _reload_settings(monkeypatch, {
+        "MTEAM_USERNAME_1": "u1", "MTEAM_API_KEY_1": "k1",
+        "MTEAM_DIGEST_MIN_SEEDERS": "100",
+        "MTEAM_DIGEST_MIN_SEEDERS_1": "5",
+    })
+    cfg = s.accounts[0].resolved_digest_config(s)
+    assert cfg.min_seeders == 5  # 账户覆盖全局
+
+
+def test_resolved_config_zero_seeders_not_swallowed(monkeypatch):
+    s = _reload_settings(monkeypatch, {
+        "MTEAM_USERNAME_1": "u1", "MTEAM_API_KEY_1": "k1",
+        "MTEAM_DIGEST_MIN_SEEDERS_1": "0",
+    })
+    cfg = s.accounts[0].resolved_digest_config(s)
+    assert cfg.min_seeders == 0  # _coalesce 不吞 0
 
 
 def test_per_account_independent_config(monkeypatch):

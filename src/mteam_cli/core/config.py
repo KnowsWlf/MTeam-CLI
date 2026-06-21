@@ -67,6 +67,7 @@ class DigestConfig:
     min_imdb: float
     hours: int
     limit: int
+    min_seeders: int  # 非 imdb 类型（music/adult…）的做种数门槛
 
 
 @dataclass(slots=True, frozen=True)
@@ -96,6 +97,7 @@ class Account:
     digest_min_imdb: float | None = None
     digest_hours: int | None = None
     digest_limit: int | None = None
+    digest_min_seeders: int | None = None
 
     @property
     def safe_name(self) -> str:
@@ -150,6 +152,7 @@ class Account:
             min_imdb=_coalesce(self.digest_min_imdb, settings.digest_min_imdb),
             hours=_coalesce(self.digest_hours, settings.digest_hours),
             limit=_coalesce(self.digest_limit, settings.digest_limit),
+            min_seeders=_coalesce(self.digest_min_seeders, settings.digest_min_seeders),
         )
 
 
@@ -176,6 +179,7 @@ class Settings:
     digest_types: list[str] = field(default_factory=lambda: ["movie", "tvshow"])
     digest_hours: int = 24
     digest_limit: int = 10
+    digest_min_seeders: int = 30  # 非 imdb 类型的做种数门槛（全局默认）
     # ── schedule (global infra knobs) ──
     schedule_window: str = "09:00-11:00"
     schedule_pre_delay_range: str = "10-300"
@@ -207,6 +211,7 @@ class Settings:
             ],
             digest_hours=_env_int("MTEAM_DIGEST_HOURS", 24),
             digest_limit=_env_int("MTEAM_DIGEST_LIMIT", 10),
+            digest_min_seeders=_env_int("MTEAM_DIGEST_MIN_SEEDERS", 30),
             schedule_window=os.getenv("MTEAM_SCHEDULE_WINDOW", "09:00-11:00").strip(),
             schedule_pre_delay_range=os.getenv("MTEAM_SCHEDULE_PRE_DELAY_RANGE", "10-300").strip(),
             schedule_heartbeat_hours=_env_int("MTEAM_SCHEDULE_HEARTBEAT_HOURS", 1),
@@ -245,6 +250,7 @@ class Settings:
                     digest_min_imdb=_suffixed_float("MTEAM_DIGEST_MIN_IMDB", i),
                     digest_hours=_suffixed_int("MTEAM_DIGEST_HOURS", i),
                     digest_limit=_suffixed_int("MTEAM_DIGEST_LIMIT", i),
+                    digest_min_seeders=_suffixed_int("MTEAM_DIGEST_MIN_SEEDERS", i),
                 )
             )
             i += 1
