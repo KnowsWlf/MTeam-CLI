@@ -5,18 +5,21 @@ Single source of truth shared by:
   * ``cli.commands.schedule``  — daily scheduled tick (one job per account)
 
 Per account: build that account's own notifier hub, open a fresh browser, run
-the proven login flow, and fire a CHECKIN_DONE / CHECKIN_FAILED notification
-through the account's own channels. Failures are isolated — one account never
-blocks or crashes the others.
+the proven login flow, optionally fetch that account's own high-score digest
+(using its own api_key + its own resolved config), and fire a CHECKIN_DONE /
+CHECKIN_FAILED notification through the account's own channels. Failures are
+isolated — one account never blocks or crashes the others, and digest never
+affects keep-alive.
 """
 
 from __future__ import annotations
 
 import logging
 
+from mteam_cli.api import fetch_high_score_digest, format_digest
 from mteam_cli.automation.login import perform_login
 from mteam_cli.core.browser_ctx import browser_session_ctx
-from mteam_cli.core.config import Account, Settings
+from mteam_cli.core.config import Account, DigestConfig, Settings
 from mteam_cli.core.models import CheckinResult
 from mteam_cli.notify import Notification, NotificationEvent, build_notifier_hub
 
@@ -27,9 +30,12 @@ async def run_one_account_tick(
     account: Account,
     settings: Settings,
     logger: logging.Logger,
-    digest_text: str = "",
 ) -> CheckinResult:
-    """Run one account's keep-alive login end-to-end and notify the outcome."""
+    """Run one account's keep-alive login end-to-end and notify the outcome.
+
+    If the account opted into digest (and can query), fetch its own digest with
+    its own api_key + resolved config and append it to the success body.
+    """
     if not account.can_keepalive:
         logger.warning("[%s] 缺少保活凭证，跳过", account.username)
         return CheckinResult(username=account.username, ok=False, skipped=True)
@@ -42,8 +48,13 @@ async def run_one_account_tick(
         logger.exception("[%s] 保活过程崩溃", account.username)
         result = CheckinResult(username=account.username, ok=False, error=str(exc))
 
-    if not digest_text and account.digest_enabled and result.ok:
-        digest_text = await _maybe_fetch_digest([account], settings, logger)
+    digest_text = ""
+    if result.ok and account.digest_enabled:
+        if account.can_query:
+            cfg = account.resolved_digest_config(settings)
+            digest_text = await _fetch_digest_for(account, cfg, settings, logger)
+        else:
+            logger.warning("[%s] digest 已开启但无 api_key，跳过", account.username)
 
     event = NotificationEvent.CHECKIN_DONE if result.ok else NotificationEvent.CHECKIN_FAILED
     title = f"[{account.username}] 签到{'成功' if result.ok else '失败'}"
@@ -51,7 +62,7 @@ async def run_one_account_tick(
         Notification(
             event=event,
             title=title,
-            body=_compose_body(result, account, digest_text),
+            body=_compose_body(result, digest_text),
         )
     )
     return result
@@ -73,12 +84,10 @@ async def run_all_accounts(
         logger.warning("没有可保活的账户（需 user+pass+totp）。")
         return 0
 
-    digest_text = await _maybe_fetch_digest(keepalive_targets, settings, logger)
-
     worst = 0
     for acct in keepalive_targets:
         try:
-            result = await run_one_account_tick(acct, settings, logger, digest_text)
+            result = await run_one_account_tick(acct, settings, logger)
             if not result.ok and not result.skipped:
                 worst = CHECKIN_FAILED_EXIT_CODE
         except Exception:  # noqa: BLE001 — never let one account stop the rest
@@ -87,43 +96,43 @@ async def run_all_accounts(
     return worst
 
 
-def _compose_body(result: CheckinResult, account: Account, digest_text: str) -> str:
-    """签到通知正文：成功时为 profile；开了 digest 开关且有内容则拼接。"""
+def _compose_body(result: CheckinResult, digest_text: str) -> str:
+    """签到通知正文：成功为 profile，有 digest 文本则拼接。
+
+    digest 的开关判断在调用方（拉取阶段）已完成——这里只看是否有内容，
+    无二次判断。
+    """
     if not result.ok:
         return result.error or "登录失败"
-    body = result.profile_text
-    if account.digest_enabled and digest_text:
-        body = f"{body}\n\n{digest_text}"
-    return body
+    if digest_text:
+        return f"{result.profile_text}\n\n{digest_text}"
+    return result.profile_text
 
 
-async def _maybe_fetch_digest(
-    targets: list[Account],
+async def _fetch_digest_for(
+    account: Account,
+    cfg: DigestConfig,
     settings: Settings,
     logger: logging.Logger,
 ) -> str:
-    """若有账户开了 digest 开关，用第一个有 api_key 的账户拉一次并格式化。
+    """用本账户的 api_key + cfg 拉取并格式化它自己的高分新片摘要。
 
-    全站统一内容，只拉一次。任何失败只记日志、返回空串——绝不影响签到。
+    任何失败只记日志、返回空串——digest 永不影响保活。
     """
-    if not any(a.digest_enabled for a in targets):
-        return ""
-    fetcher = next((a for a in settings.accounts if a.can_query), None)
-    if fetcher is None:
-        logger.warning("digest 已开启但无可用 api_key 账户，跳过。")
-        return ""
     try:
-        from mteam_cli.api import fetch_high_score_digest, format_digest
-
         rows = await fetch_high_score_digest(
-            fetcher.api_key,
+            account.api_key,
             base_url=settings.api_base_url,
-            min_imdb=settings.digest_min_imdb,
-            types=settings.digest_types,
-            hours=settings.digest_hours,
-            limit=settings.digest_limit,
+            min_imdb=cfg.min_imdb,
+            types=cfg.types,
+            hours=cfg.hours,
+            limit=cfg.limit,
         )
-        return format_digest(rows, min_imdb=settings.digest_min_imdb)
+        logger.info(
+            "[%s] digest: 命中 %d 条（min_imdb=%s, types=%s, hours=%d）",
+            account.username, len(rows), cfg.min_imdb, ",".join(cfg.types), cfg.hours,
+        )
+        return format_digest(rows, min_imdb=cfg.min_imdb)
     except Exception:  # noqa: BLE001 — digest 失败绝不影响签到
-        logger.exception("digest 拉取失败，本轮通知不含高分新片")
+        logger.exception("[%s] digest 拉取失败，本轮通知不含高分新片", account.username)
         return ""

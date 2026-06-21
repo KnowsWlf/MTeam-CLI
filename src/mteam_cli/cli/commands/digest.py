@@ -45,14 +45,17 @@ async def _run(args: argparse.Namespace, settings: Settings) -> int:
     account = resolve_account_or_exit(args, settings)
     require_query(account)
 
-    min_imdb = args.min_imdb if args.min_imdb is not None else settings.digest_min_imdb
+    # 三级优先级：命令行 > 账户覆盖 > 全局默认。
+    # 账户+全局的合并收敛在 resolved_digest_config（与 run 路径同一来源）。
+    cfg = account.resolved_digest_config(settings)
+    min_imdb = args.min_imdb if args.min_imdb is not None else cfg.min_imdb
     types = (
         [t.strip() for t in args.types.split(",") if t.strip()]
         if args.types
-        else settings.digest_types
+        else cfg.types
     )
-    hours = args.hours if args.hours is not None else settings.digest_hours
-    limit = args.limit if args.limit is not None else settings.digest_limit
+    hours = args.hours if args.hours is not None else cfg.hours
+    limit = args.limit if args.limit is not None else cfg.limit
 
     rows = await fetch(
         fetch_high_score_digest(
