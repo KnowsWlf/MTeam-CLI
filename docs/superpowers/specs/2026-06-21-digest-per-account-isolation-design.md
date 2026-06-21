@@ -194,16 +194,20 @@ format_digest → digest_text → _compose_body → 通知
 
 ---
 
-## 未来方向：非 imdb 质量信号（方案 B，本次不做）
+## 方案 B：非 imdb 质量信号（0.5.0 已实现）
 
-music/adult 分类的 search 结果不带 `imdbRating`，当前 digest 对这些类型无效。未来可探索其他质量维度，但**必须先探测真实字段**（CLAUDE.md 原则：API 形态需验证，不臆测）：
+> 首版标为「未来方向」，0.5.0 落地。先**探测了真实字段**（CLAUDE.md 原则）再写码。
 
-- **待探测：** 抓取 music/adult 的真实 search 响应，确认以下字段是否有值、是否可用作质量信号：
-  - `doubanRating` — 豆瓣评分（数字维度，与 imdb 同理）
-  - `seeders` — 做种数（站内热度硬指标，所有分类应都有）
-  - 做种数 + 时间窗组合 —「新发布即高做种」作为高关注信号
-- **可能的设计：** digest 支持「质量信号」按类型可配——影视用 imdb 阈值，music/adult 用 seeders 阈值。
-- **风险：** 在确认字段有值之前不可写代码，否则基于错误假设。
+**探测结论（生产 `api.m-team.cc`，music 10 条样本）：**
+- `imdbRating` / `doubanRating` —— **恒为 None**，IMDB/豆瓣对 music 完全无效。
+- `status.seeders` —— **有值**（字符串数字，如 `"326"`），做种数=站内热度硬指标。
+- `status.timesCompleted` —— 有值（累计完成数，备选信号，未采用）。
+- `createdDate` —— 有值且降序，时间窗过滤照常可用。
+- `adult` —— 空/带词均返回 0 条：测试账户未开成人浏览权限；字段结构与 music 同源。
+
+**实现：** digest 按类型选信号（内置映射 `_IMDB_TYPES={movie,tvshow}`）——影视用 `min_imdb`，其余用 `status.seeders ≥ min_seeders`。两信号尺度不可比，**分桶排序**（imdb 组降序在前、seeders 组降序在后）再截 `limit`，纯影视配置行为与 0.4.0 一致。`format_digest` 对 seeders 行用 🌱 前缀。新配置 `MTEAM_DIGEST_MIN_SEEDERS`（全局默认 30 + `_i` 覆盖），并入 `DigestConfig`/`resolved_digest_config`。
+
+**未采用的备选：** `timesCompleted`（偏向老种）、`doubanRating`（music 也为 None）。`seeders` 是当前热度的直接信号，最契合「新片精选」。
 
 ---
 
