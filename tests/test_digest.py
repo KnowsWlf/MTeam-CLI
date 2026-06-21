@@ -36,11 +36,13 @@ def test_shape_extracts_fields():
         "size": "1073741824",
         "createdDate": "2026-06-05 10:00:00",
     }
-    row = _shape(t, mode="movie", imdb=9.1)
+    row = _shape(t, mode="movie", signal_kind="imdb", score=9.1)
     assert row["id"] == "123"
     assert row["title"] == "某电影名"          # smallDescr 优先
     assert row["type"] == "电影"
     assert row["imdb"] == 9.1
+    assert row["score"] == 9.1
+    assert row["signal_kind"] == "imdb"
     assert row["douban"] == "8.8"
     assert row["size"] == "1.0 GiB"           # humanize binary
     assert row["createdDate"] == "2026-06-05 10:00:00"
@@ -48,13 +50,40 @@ def test_shape_extracts_fields():
 
 def test_shape_falls_back_to_name():
     t = {"id": "1", "name": "Fallback", "imdbRating": "8.0"}
-    row = _shape(t, mode="tvshow", imdb=8.0)
+    row = _shape(t, mode="tvshow", signal_kind="imdb", score=8.0)
     assert row["title"] == "Fallback"
     assert row["type"] == "电视剧"
 
 
+def test_shape_seeders_extracts_from_status():
+    t = {
+        "id": "9", "smallDescr": "某专辑", "name": "Album",
+        "status": {"seeders": "326"},
+        "createdDate": "2026-06-05 10:00:00",
+    }
+    row = _shape(t, mode="music", signal_kind="seeders", score=326)
+    assert row["title"] == "某专辑"
+    assert row["type"] == "音乐"
+    assert row["seeders"] == 326
+    assert row["score"] == 326
+    assert row["signal_kind"] == "seeders"
+    assert row["imdb"] == "-"          # music 无 imdb
+
+
 import asyncio
 import mteam_cli.api.digest as digest_mod
+
+
+def _parse_int_check():
+    from mteam_cli.api.digest import _parse_int
+    assert _parse_int("326") == 326
+    assert _parse_int(None) is None
+    assert _parse_int("") is None
+    assert _parse_int("x") is None
+
+
+def test_parse_int():
+    _parse_int_check()
 
 
 def _fake_search_factory(by_mode):
@@ -115,6 +144,48 @@ def test_fetch_unparseable_date_kept(monkeypatch):
     assert [r["id"] for r in rows] == ["x"]  # 日期解析失败保留
 
 
+def test_fetch_seeders_type_filters_by_seeders(monkeypatch):
+    """music：按 status.seeders ≥ min_seeders 过滤，imdb 阈值不参与。"""
+    by_mode = {"music": [
+        {"id": "m1", "name": "热门", "status": {"seeders": "300"}, "createdDate": "2026-06-05 10:00:00"},
+        {"id": "m2", "name": "冷门", "status": {"seeders": "5"}, "createdDate": "2026-06-05 10:00:00"},
+        {"id": "m3", "name": "无status", "createdDate": "2026-06-05 10:00:00"},
+    ]}
+    monkeypatch.setattr(digest_mod, "search_torrents", _fake_search_factory(by_mode))
+    rows = asyncio.run(
+        digest_mod.fetch_high_score_digest(
+            "KEY", base_url="B", min_imdb=8.0, types=["music"],
+            hours=24, limit=10, min_seeders=30, now="2026-06-05 12:00:00",
+        )
+    )
+    assert [r["id"] for r in rows] == ["m1"]  # 仅 seeders≥30
+    assert rows[0]["signal_kind"] == "seeders"
+    assert rows[0]["seeders"] == 300
+
+
+def test_fetch_mixed_types_bucket_order(monkeypatch):
+    """混合 movie+music：imdb 组（按 imdb 降序）在前，seeders 组（按 seeders 降序）在后。"""
+    by_mode = {
+        "movie": [
+            {"id": "v1", "name": "V1", "imdbRating": "8.2", "createdDate": "2026-06-05 11:00:00"},
+            {"id": "v2", "name": "V2", "imdbRating": "9.0", "createdDate": "2026-06-05 11:00:00"},
+        ],
+        "music": [
+            {"id": "s1", "name": "S1", "status": {"seeders": "50"}, "createdDate": "2026-06-05 11:00:00"},
+            {"id": "s2", "name": "S2", "status": {"seeders": "200"}, "createdDate": "2026-06-05 11:00:00"},
+        ],
+    }
+    monkeypatch.setattr(digest_mod, "search_torrents", _fake_search_factory(by_mode))
+    rows = asyncio.run(
+        digest_mod.fetch_high_score_digest(
+            "KEY", base_url="B", min_imdb=8.0, types=["movie", "music"],
+            hours=24, limit=10, min_seeders=30, now="2026-06-05 12:00:00",
+        )
+    )
+    # imdb 桶降序(v2>v1) 在前，seeders 桶降序(s2>s1) 在后——seeders(大数)不会挤掉 imdb
+    assert [r["id"] for r in rows] == ["v2", "v1", "s2", "s1"]
+
+
 from mteam_cli.api.digest import format_digest
 
 
@@ -125,10 +196,16 @@ def test_format_digest_empty_returns_blank():
 
 def test_format_digest_lists_items():
     rows = [
-        {"title": "片A", "type": "电影", "imdb": 9.3},
-        {"title": "剧B", "type": "电视剧", "imdb": 8.5},
+        {"title": "片A", "type": "电影", "imdb": 9.3, "score": 9.3, "signal_kind": "imdb"},
+        {"title": "剧B", "type": "电视剧", "imdb": 8.5, "score": 8.5, "signal_kind": "imdb"},
     ]
     out = format_digest(rows, min_imdb=8.0)
-    assert "IMDB≥8.0" in out
+    assert "今日新片精选" in out
     assert "[9.3] 片A (电影)" in out
     assert "[8.5] 剧B (电视剧)" in out
+
+
+def test_format_digest_seeders_row_uses_seedling_tag():
+    rows = [{"title": "专辑C", "type": "音乐", "seeders": 326, "score": 326, "signal_kind": "seeders"}]
+    out = format_digest(rows)
+    assert "[🌱326] 专辑C (音乐)" in out
