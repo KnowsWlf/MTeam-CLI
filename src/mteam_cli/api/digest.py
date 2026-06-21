@@ -77,8 +77,8 @@ async def fetch_high_score_digest(
 ) -> list[dict[str, Any]]:
     """拉取各类型最新结果，按 IMDB 阈值 + 发布时间窗过滤，降序截断。
 
-    ``now`` 仅供测试注入。空关键词搜索取该类目最新；若生产不接受空关键词，
-    在此改用宽泛词或 mode=normal 类目过滤（probe-verified during impl）。
+    ``now`` 仅供测试注入。空关键词 + mode=movie/tvshow 取该类目最新——已对生产
+    api.m-team.cc 实测确认可用（返回最新影视，按发布时间倒序）。
     """
     rows: list[dict[str, Any]] = []
     for mode in types:
