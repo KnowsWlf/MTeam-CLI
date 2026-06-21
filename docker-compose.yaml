@@ -38,6 +38,13 @@ services:
       - NOTIFY_SMTP_FROM=
       - NOTIFY_SMTP_USE_TLS=true
 
+      # ── 高分新片摘要（按账户开关 + 全局参数）──
+      # - MTEAM_DIGEST_ENABLED_1=true
+      - MTEAM_DIGEST_MIN_IMDB=8.0
+      - MTEAM_DIGEST_TYPES=movie,tvshow
+      - MTEAM_DIGEST_HOURS=24
+      - MTEAM_DIGEST_LIMIT=10
+
       # ── 定时调度（全局）───────────────────────────────────────
       - MTEAM_SCHEDULE_WINDOW=09:00-11:00
       - MTEAM_SCHEDULE_PRE_DELAY_RANGE=10-300

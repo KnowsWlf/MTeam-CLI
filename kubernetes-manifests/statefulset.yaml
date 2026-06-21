@@ -95,6 +95,17 @@ spec:
               value: ""
             - name: NOTIFY_SMTP_USE_TLS
               value: "true"
+            # ── 高分新片摘要 ──
+            # - name: MTEAM_DIGEST_ENABLED_1
+            #   value: "true"
+            - name: MTEAM_DIGEST_MIN_IMDB
+              value: "8.0"
+            - name: MTEAM_DIGEST_TYPES
+              value: movie,tvshow
+            - name: MTEAM_DIGEST_HOURS
+              value: "24"
+            - name: MTEAM_DIGEST_LIMIT
+              value: "10"
             # ── 定时调度（全局）─────────────────────────────────────
             - name: MTEAM_SCHEDULE_WINDOW
               value: 09:00-11:00

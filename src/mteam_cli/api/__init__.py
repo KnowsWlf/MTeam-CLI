@@ -21,6 +21,7 @@ from mteam_cli.api.public import (
     search_torrents,
 )
 from mteam_cli.api.session import WebSession, load_session
+from mteam_cli.api.digest import fetch_high_score_digest, format_digest
 
 __all__ = [
     "MTeamAPIError",
@@ -37,4 +38,6 @@ __all__ = [
     "get_notices",
     "WebSession",
     "load_session",
+    "fetch_high_score_digest",
+    "format_digest",
 ]

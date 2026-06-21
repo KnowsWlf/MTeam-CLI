@@ -36,6 +36,7 @@ mteam-cli seeding [--leeching] [-n N]
 mteam-cli hnr [-n N]
 mteam-cli messages [-n N]
 mteam-cli notices [-n N]
+mteam-cli digest [--account NAME]
 
 # `python -m mteam_cli <cmd>` is equivalent to `mteam-cli <cmd>`.
 ```
@@ -83,6 +84,7 @@ Verified against M-Team's OpenAPI spec (`https://test2.m-team.cc/api/swagger-ui/
   - **Known wall**: with the JWT (+ `webversion`/`ts`/`did`/`visitorid` headers) those endpoints pass auth + version checks but then return **`簽名錯誤`** — they require the SPA's client-side request signature `_sgin`, which we deliberately do **not** reverse-engineer (anti-automation, brittle, low value). So `hnr`/`messages` are effectively **web-UI-only**; they degrade to a clear "启用请求签名，CLI 不支持" message. The JWT plumbing is kept (it's generic and documents how far the session path gets). Don't add a signing implementation.
 - **Host**: default `api.m-team.cc` (the working `mcp-server-mteam` reference uses `.cc`; `api.m-team.io` is a mirror, override via `MTEAM_API_BASE_URL`). Both sit behind Cloudflare, which **bot-blocks datacenter IPs** (302 → google.com) — so data commands must run from a normal/residential network, not a cloud sandbox. The search shape (`pageNumber`, JSON) and detail/genDlToken (form `id`) are taken from that proven reference, so they match production; the OpenAPI test server used `page` and differs.
 - `humanize.py` — `naturalsize(binary=True)` / `ratio` / `num` formatting.
+- `digest.py` — 高分新片摘要：复用 `search_torrents` 拉 movie/tvshow，本地按 IMDB 阈值 + 发布时间窗过滤排序。`fetch_high_score_digest` + `format_digest`。供 `digest` 命令与签到 runner（fetch-once）共用。
 
 ### `automation/` (keep-alive — browser)
 - `localstorage.py` — `LocalStorageManager` (load/save a page's localStorage to the per-account JSON file). M-Team stores its JWT in localStorage, so this — not Playwright `storage_state` — is the persistence mechanism (proven in the legacy script; do not "upgrade" it blindly).

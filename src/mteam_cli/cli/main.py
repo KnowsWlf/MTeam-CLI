@@ -33,6 +33,7 @@ _COMMAND_MODULES = (
     "hnr",
     "messages",
     "notices",
+    "digest",
 )
 
 
