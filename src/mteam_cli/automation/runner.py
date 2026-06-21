@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 
 from mteam_cli.automation.login import perform_login
-from mteam_cli.cli._browser import browser_session_ctx
+from mteam_cli.core.browser_ctx import browser_session_ctx
 from mteam_cli.core.config import Account, Settings
 from mteam_cli.core.models import CheckinResult
 from mteam_cli.notify import Notification, NotificationEvent, build_notifier_hub
@@ -67,9 +67,7 @@ async def run_all_accounts(
     keepalive_targets = [a for a in targets if a.can_keepalive]
 
     if only and not keepalive_targets:
-        from mteam_cli.cli._account import require_keepalive
-
-        require_keepalive(targets[0])
+        targets[0].ensure_keepalive()
 
     if not keepalive_targets:
         logger.warning("没有可保活的账户（需 user+pass+totp）。")

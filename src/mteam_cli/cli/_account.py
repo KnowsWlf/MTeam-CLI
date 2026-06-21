@@ -28,20 +28,12 @@ def resolve_account_or_exit(args: argparse.Namespace, settings: Settings) -> Acc
 
 def require_query(account: Account) -> None:
     """Guard: a data command needs this account's api_key."""
-    if not account.can_query:
-        raise SystemExit(
-            f"账户 {account.username!r} 未配置 API key。"
-            f"请在 .env 设置对应的 MTEAM_API_KEY_<n>（在 M-Team 控制台生成）。"
-        )
+    account.ensure_query()
 
 
 def require_keepalive(account: Account) -> None:
     """Guard: a keep-alive command needs username+password+totp."""
-    if not account.can_keepalive:
-        raise SystemExit(
-            f"账户 {account.username!r} 缺少保活所需凭证"
-            f"（需要 MTEAM_USERNAME/PASSWORD/TOTP_SECRET_<n>）。"
-        )
+    account.ensure_keepalive()
 
 
 def resolve_session_or_exit(account: Account, settings: Settings):

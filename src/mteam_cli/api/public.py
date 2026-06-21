@@ -4,9 +4,10 @@ Every endpoint is POST. Some take query params (``uid``/``id``), others a JSON
 body. Each function takes ``api_key`` + ``base_url`` and returns the raw ``data``
 payload; field shaping into rows happens in the command layer.
 
-Note on pagination: the OpenAPI spec (test server) uses ``page``/``pageSize`` and
-a single integer ``category``. If production (``api.m-team.io``) rejects these,
-switch to ``pageNumber``/``pageSize`` + ``categories: []`` here — one place.
+Pagination: production (``api.m-team.cc``) uses ``pageNumber``/``pageSize`` —
+verified against the working mcp-server-mteam reference. (The OpenAPI test
+server documented ``page``; production rejects it. Keep that delta noted here,
+in the one place it's encoded.)
 """
 
 from __future__ import annotations

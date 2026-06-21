@@ -74,6 +74,22 @@ class Account:
     def can_query(self) -> bool:
         return bool(self.api_key)
 
+    def ensure_keepalive(self) -> None:
+        """Guard: raise ``SystemExit`` if this account can't keep-alive."""
+        if not self.can_keepalive:
+            raise SystemExit(
+                f"账户 {self.username!r} 缺少保活所需凭证"
+                f"（需要 MTEAM_USERNAME/PASSWORD/TOTP_SECRET_<n>）。"
+            )
+
+    def ensure_query(self) -> None:
+        """Guard: raise ``SystemExit`` if this account has no API key."""
+        if not self.can_query:
+            raise SystemExit(
+                f"账户 {self.username!r} 未配置 API key。"
+                f"请在 .env 设置对应的 MTEAM_API_KEY_<n>（在 M-Team 控制台生成）。"
+            )
+
     @property
     def has_telegram(self) -> bool:
         return bool(self.telegram_token and self.telegram_chat_id)

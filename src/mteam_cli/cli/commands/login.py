@@ -7,7 +7,7 @@ import logging
 
 from mteam_cli.automation.login import perform_login
 from mteam_cli.cli._account import add_account_arg, require_keepalive, resolve_account_or_exit
-from mteam_cli.cli._browser import browser_session_ctx
+from mteam_cli.core.browser_ctx import browser_session_ctx
 from mteam_cli.core.config import Settings
 from mteam_cli.notify import Notification, NotificationEvent, build_notifier_hub
 

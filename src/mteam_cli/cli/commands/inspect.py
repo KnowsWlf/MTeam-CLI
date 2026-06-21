@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import logging
 
-from mteam_cli.cli._browser import browser_session_ctx
+from mteam_cli.core.browser_ctx import browser_session_ctx
 from mteam_cli.core.config import Settings
 
 

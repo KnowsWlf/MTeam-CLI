@@ -1,4 +1,10 @@
-"""Shared browser-session lifecycle for keep-alive commands.
+"""Shared browser-session lifecycle for keep-alive flows.
+
+Lives in ``core`` (not ``cli``) so the lower automation layer can use it
+without importing the presentation layer. Deliberately does NOT import
+Playwright at module top — ``BrowserSession`` is imported lazily inside the
+context manager so ``doctor`` and the data commands stay usable where Chromium
+is not installed.
 
 Far simpler than the WeRead equivalent: no state-machine detection, no trace
 plumbing. Just start a BrowserSession and guarantee close. Navigation + the

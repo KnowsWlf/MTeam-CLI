@@ -1,6 +1,6 @@
 """Shared HTTP plumbing for the M-Team data API.
 
-Transport: the official ``api.m-team.io`` API, authenticated with an
+Transport: the official ``api.m-team.cc`` API, authenticated with an
 ``x-api-key`` header (generated in the M-Team control panel). Pure urllib in a
 thread pool — zero browser, zero extra deps — so data commands stay light and
 usable even where Chromium is not installed.
