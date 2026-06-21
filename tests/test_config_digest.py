@@ -72,3 +72,28 @@ def test_digest_config_is_frozen():
     except (AttributeError, Exception):
         return
     raise AssertionError("DigestConfig 应为 frozen")
+
+
+from mteam_cli.core.config import _suffixed_int, _suffixed_float
+
+
+def test_suffixed_int_present(monkeypatch):
+    monkeypatch.setenv("FOO_1", "48")
+    assert _suffixed_int("FOO", 1) == 48
+
+
+def test_suffixed_int_absent_or_blank(monkeypatch):
+    monkeypatch.delenv("FOO_2", raising=False)
+    assert _suffixed_int("FOO", 2) is None
+    monkeypatch.setenv("FOO_3", "   ")
+    assert _suffixed_int("FOO", 3) is None
+
+
+def test_suffixed_float_present(monkeypatch):
+    monkeypatch.setenv("BAR_1", "7.5")
+    assert _suffixed_float("BAR", 1) == 7.5
+
+
+def test_suffixed_float_absent(monkeypatch):
+    monkeypatch.delenv("BAR_2", raising=False)
+    assert _suffixed_float("BAR", 2) is None

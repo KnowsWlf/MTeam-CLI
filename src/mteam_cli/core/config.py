@@ -36,6 +36,20 @@ def _suffixed(name: str, i: int) -> str | None:
     return raw.strip() if raw and raw.strip() else None
 
 
+def _suffixed_int(name: str, i: int) -> int | None:
+    raw = os.getenv(f"{name}_{i}")
+    if raw is None or not raw.strip():
+        return None
+    return int(raw.strip())
+
+
+def _suffixed_float(name: str, i: int) -> float | None:
+    raw = os.getenv(f"{name}_{i}")
+    if raw is None or not raw.strip():
+        return None
+    return float(raw.strip())
+
+
 def _coalesce(value, default):
     """返回 value，除非它是 None（此时返回 default）。
 
