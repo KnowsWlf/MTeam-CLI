@@ -97,3 +97,65 @@ def test_suffixed_float_present(monkeypatch):
 def test_suffixed_float_absent(monkeypatch):
     monkeypatch.delenv("BAR_2", raising=False)
     assert _suffixed_float("BAR", 2) is None
+
+
+def test_resolved_config_all_inherited(monkeypatch):
+    s = _reload_settings(monkeypatch, {
+        "MTEAM_USERNAME_1": "u1", "MTEAM_API_KEY_1": "k1",
+    })
+    cfg = s.accounts[0].resolved_digest_config(s)
+    assert cfg.types == ["movie", "tvshow"]
+    assert cfg.min_imdb == 8.0
+    assert cfg.hours == 24
+    assert cfg.limit == 10
+
+
+def test_resolved_config_partial_override(monkeypatch):
+    s = _reload_settings(monkeypatch, {
+        "MTEAM_USERNAME_1": "u1", "MTEAM_API_KEY_1": "k1",
+        "MTEAM_DIGEST_TYPES_1": "movie",
+    })
+    cfg = s.accounts[0].resolved_digest_config(s)
+    assert cfg.types == ["movie"]       # 账户覆盖
+    assert cfg.min_imdb == 8.0          # 继承全局
+    assert cfg.hours == 24
+    assert cfg.limit == 10
+
+
+def test_resolved_config_full_override(monkeypatch):
+    s = _reload_settings(monkeypatch, {
+        "MTEAM_USERNAME_1": "u1", "MTEAM_API_KEY_1": "k1",
+        "MTEAM_DIGEST_TYPES_1": "music,adult",
+        "MTEAM_DIGEST_MIN_IMDB_1": "6.5",
+        "MTEAM_DIGEST_HOURS_1": "72",
+        "MTEAM_DIGEST_LIMIT_1": "3",
+    })
+    cfg = s.accounts[0].resolved_digest_config(s)
+    assert cfg.types == ["music", "adult"]
+    assert cfg.min_imdb == 6.5
+    assert cfg.hours == 72
+    assert cfg.limit == 3
+
+
+def test_resolved_config_zero_imdb_not_swallowed(monkeypatch):
+    s = _reload_settings(monkeypatch, {
+        "MTEAM_USERNAME_1": "u1", "MTEAM_API_KEY_1": "k1",
+        "MTEAM_DIGEST_MIN_IMDB_1": "0",
+        "MTEAM_DIGEST_LIMIT_1": "0",
+    })
+    cfg = s.accounts[0].resolved_digest_config(s)
+    assert cfg.min_imdb == 0.0          # 不被 _coalesce 当假值吞掉
+    assert cfg.limit == 0
+
+
+def test_per_account_independent_config(monkeypatch):
+    s = _reload_settings(monkeypatch, {
+        "MTEAM_USERNAME_1": "u1", "MTEAM_API_KEY_1": "k1",
+        "MTEAM_DIGEST_TYPES_1": "movie",
+        "MTEAM_USERNAME_2": "u2", "MTEAM_API_KEY_2": "k2",
+        "MTEAM_DIGEST_TYPES_2": "tvshow",
+    })
+    cfg1 = s.accounts[0].resolved_digest_config(s)
+    cfg2 = s.accounts[1].resolved_digest_config(s)
+    assert cfg1.types == ["movie"]
+    assert cfg2.types == ["tvshow"]

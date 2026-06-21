@@ -91,6 +91,11 @@ class Account:
     feishu_token: str | None = None
     smtp_to: str | None = None  # recipient(s); server config lives on Settings
     digest_enabled: bool = False
+    # ── per-account digest overrides (None = 继承全局 Settings.digest_*) ──
+    digest_types: list[str] | None = None
+    digest_min_imdb: float | None = None
+    digest_hours: int | None = None
+    digest_limit: int | None = None
 
     @property
     def safe_name(self) -> str:
@@ -133,6 +138,19 @@ class Account:
 
     def has_smtp(self, settings: "Settings") -> bool:
         return bool(settings.smtp_host and settings.smtp_from and self.smtp_to)
+
+    def resolved_digest_config(self, settings: "Settings") -> "DigestConfig":
+        """合并全局默认 + 本账户覆盖，得到最终 digest 参数（合并规则唯一来源）。
+
+        `types` 用 ``or``（空列表继承全局正是期望）；数值维度用
+        ``_coalesce``，否则 ``min_imdb=0.0`` / ``limit=0`` 会被当假值吞掉。
+        """
+        return DigestConfig(
+            types=self.digest_types or settings.digest_types,
+            min_imdb=_coalesce(self.digest_min_imdb, settings.digest_min_imdb),
+            hours=_coalesce(self.digest_hours, settings.digest_hours),
+            limit=_coalesce(self.digest_limit, settings.digest_limit),
+        )
 
 
 @dataclass(slots=True)
@@ -219,6 +237,14 @@ class Settings:
                     feishu_token=_suffixed("NOTIFY_FEISHU_TOKEN", i),
                     smtp_to=smtp_to,
                     digest_enabled=_env_bool(f"MTEAM_DIGEST_ENABLED_{i}", False),
+                    digest_types=(
+                        [t.strip() for t in raw.split(",") if t.strip()]
+                        if (raw := _suffixed("MTEAM_DIGEST_TYPES", i))
+                        else None
+                    ),
+                    digest_min_imdb=_suffixed_float("MTEAM_DIGEST_MIN_IMDB", i),
+                    digest_hours=_suffixed_int("MTEAM_DIGEST_HOURS", i),
+                    digest_limit=_suffixed_int("MTEAM_DIGEST_LIMIT", i),
                 )
             )
             i += 1
