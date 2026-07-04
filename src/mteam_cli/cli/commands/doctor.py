@@ -69,7 +69,7 @@ def handle(args: argparse.Namespace, settings: Settings) -> int:
 
     # Global SMTP server status.
     print()
-    print("SMTP 服务（全局，收件人按账户 NOTIFY_SMTP_TO_<n> / NOTIFY_EMAIL_<n>）：")
+    print("SMTP 服务（全局 [smtp]，收件人按账户 [account.notify].smtp_to）：")
     if settings.smtp_host:
         print(f"  {settings.smtp_host}:{settings.smtp_port}  from={settings.smtp_from}  tls={settings.smtp_use_tls}")
     else:

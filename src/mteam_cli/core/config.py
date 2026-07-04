@@ -105,7 +105,7 @@ class Account:
         if not self.can_keepalive:
             raise SystemExit(
                 f"账户 {self.username!r} 缺少保活所需凭证"
-                f"（需要 MTEAM_USERNAME/PASSWORD/TOTP_SECRET_<n>）。"
+                f"（该 [[account]] 需填 username + password + totp_secret）。"
             )
 
     def ensure_query(self) -> None:
@@ -113,7 +113,7 @@ class Account:
         if not self.can_query:
             raise SystemExit(
                 f"账户 {self.username!r} 未配置 API key。"
-                f"请在 .env 设置对应的 MTEAM_API_KEY_<n>（在 M-Team 控制台生成）。"
+                f"请在 config.toml 该 [[account]] 填 api_key（在 M-Team 控制台生成）。"
             )
 
     @property
