@@ -5,17 +5,75 @@
 #   它必须在 Pod 重建后存活，且同一时刻只能有一个实例持有（避免并发刷新登录
 #   态互相挤掉）。这正是 StatefulSet + volumeClaimTemplates 的语义。
 #
-# 为什么没有 Service 对象：
-#   本应用是纯后台 worker，没有对外端口，也不需要 Pod 间寻址。serviceName 是
-#   schema 必填字段，但其指向的 headless Service 存不存在不影响 Pod 运行。
+# 配置形态（混合式，符合 12-factor）：
+#   * 非密钥结构 → ConfigMap（config.toml），只读挂到 /app/config.toml
+#   * 密钥（password/totp_secret/api_key/smtp password）→ Secret，作为 env 注入，
+#     由程序的 env 覆盖机制盖过 config.toml 里留空的同名字段。明文不入 ConfigMap。
+#   env 覆盖名（账户 i = config.toml 里 [[account]] 的 1-based 顺序）：
+#     MTEAM_PASSWORD_i / MTEAM_TOTP_SECRET_i / MTEAM_API_KEY_i / NOTIFY_SMTP_PASSWORD
 #
-# 登录是全自动的（TOTP，无需扫码）：容器跑 `mteam-cli schedule`，每账户在随机
-# 时刻自动以「localStorage → 账号密码+TOTP」登录保活。
+# 登录全自动（TOTP，无需扫码）：容器跑 `mteam-cli schedule`。
 #
 # 部署：
-#   1. 填好下面的账户 + 通知配置（生产建议抽到 Secret）
+#   1. 编辑下面 ConfigMap 的 config.toml（结构；密钥留空）+ Secret（填真实密钥）
 #   2. kubectl apply -f kubernetes-manifests/statefulset.yaml
-#   3. kubectl logs -f mteam-cli-0   # 看调度心跳
+#   3. kubectl logs -f mteam-cli-0
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mteam-cli-config
+  labels:
+    app: mteam-cli
+data:
+  config.toml: |
+    [site]
+    headless = true
+
+    [schedule]
+    window = "09:00-11:00"
+    pre_delay_range = "10-300"
+    heartbeat_hours = 1
+
+    [smtp]
+    host = ""
+    port = 465
+    user = ""
+    from = ""
+    use_tls = true
+    # password 走 Secret（NOTIFY_SMTP_PASSWORD）注入
+
+    [digest]
+    min_imdb = 8.0
+    min_seeders = 30
+    types = ["movie", "tvshow"]
+    hours = 24
+    limit = 10
+
+    [[account]]
+    username = "user1"
+    digest_enabled = false
+    # password / totp_secret / api_key 走 Secret（MTEAM_*_1）注入
+      [account.notify]
+      telegram_token = ""
+      telegram_chat_id = ""
+      feishu_token = ""
+      smtp_to = ""
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mteam-cli-secrets
+  labels:
+    app: mteam-cli
+type: Opaque
+stringData:
+  # 账户 1 的密钥（对应 ConfigMap 里第 1 个 [[account]]）
+  MTEAM_PASSWORD_1: "pass1"
+  MTEAM_TOTP_SECRET_1: "totp1"
+  MTEAM_API_KEY_1: "apikey1"
+  # 全局 SMTP 密码（授权码）
+  NOTIFY_SMTP_PASSWORD: ""
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -62,58 +120,15 @@ spec:
           env:
             - name: TZ
               value: Asia/Shanghai
-            - name: MTEAM_HEADLESS
-              value: "true"
-            # ── 账户 1：凭证 + 通知接收端（生产请用 Secret）─────────
-            - name: MTEAM_USERNAME_1
-              value: user1
-            - name: MTEAM_PASSWORD_1
-              value: pass1
-            - name: MTEAM_TOTP_SECRET_1
-              value: totp1
-            - name: MTEAM_API_KEY_1
-              value: apikey1
-            # 账户 1 的通知（各渠道 opt-in）
-            - name: NOTIFY_TELEGRAM_TOKEN_1
-              value: ""
-            - name: NOTIFY_TELEGRAM_CHAT_ID_1
-              value: ""
-            - name: NOTIFY_FEISHU_TOKEN_1
-              value: ""
-            - name: NOTIFY_SMTP_TO_1
-              value: ""
-            # ── SMTP 服务器（全局，所有账户共享）─────────────────────
-            - name: NOTIFY_SMTP_HOST
-              value: ""
-            - name: NOTIFY_SMTP_PORT
-              value: "465"
-            - name: NOTIFY_SMTP_USER
-              value: ""
-            - name: NOTIFY_SMTP_PASSWORD
-              value: ""
-            - name: NOTIFY_SMTP_FROM
-              value: ""
-            - name: NOTIFY_SMTP_USE_TLS
-              value: "true"
-            # ── 高分新片摘要 ──
-            # - name: MTEAM_DIGEST_ENABLED_1
-            #   value: "true"
-            - name: MTEAM_DIGEST_MIN_IMDB
-              value: "8.0"
-            - name: MTEAM_DIGEST_TYPES
-              value: movie,tvshow
-            - name: MTEAM_DIGEST_HOURS
-              value: "24"
-            - name: MTEAM_DIGEST_LIMIT
-              value: "10"
-            # ── 定时调度（全局）─────────────────────────────────────
-            - name: MTEAM_SCHEDULE_WINDOW
-              value: 09:00-11:00
-            - name: MTEAM_SCHEDULE_PRE_DELAY_RANGE
-              value: 10-300
-            - name: MTEAM_SCHEDULE_HEARTBEAT_HOURS
-              value: "1"
+          # 密钥从 Secret 注入为环境变量，覆盖 config.toml 里留空的同名字段。
+          envFrom:
+            - secretRef:
+                name: mteam-cli-secrets
           volumeMounts:
+            - name: config
+              mountPath: /app/config.toml
+              subPath: config.toml
+              readOnly: true
             - name: data
               mountPath: /app/data
           livenessProbe:
@@ -136,6 +151,10 @@ spec:
               memory: 256Mi
             limits:
               memory: 1Gi
+      volumes:
+        - name: config
+          configMap:
+            name: mteam-cli-config
   volumeClaimTemplates:
     - metadata:
         name: data

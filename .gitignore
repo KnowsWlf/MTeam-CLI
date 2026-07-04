@@ -1,6 +1,7 @@
 .idea
 .vscode
 .env
+config.toml
 .venv
 .flake8
 .python-version

@@ -56,7 +56,7 @@ class DailyScheduler:
             armed += 1
 
         if armed == 0:
-            self.logger.error("没有可保活账户，调度器空转。请配置 MTEAM_USERNAME/PASSWORD/TOTP_SECRET_<n>。")
+            self.logger.error("没有可保活账户，调度器空转。请在 config.toml 的 [[account]] 填 username + password + totp_secret。")
 
         schedule.every(self.settings.schedule_heartbeat_hours).hours.do(self._heartbeat)
         self._heartbeat()

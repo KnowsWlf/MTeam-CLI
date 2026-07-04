@@ -1,0 +1,77 @@
+# M-Team CLI 配置（TOML）。复制为 config.toml 并填写；config.toml 已 gitignored。
+#
+# 发现顺序：--config PATH  >  MTEAM_CONFIG 环境变量  >  ./config.toml（仓库根）
+#
+# 密钥可用环境变量覆盖（混合式，便于 CI/k8s 注入、明文不入镜像）：
+#   账户 i（1-based，按下方 [[account]] 顺序）：
+#     MTEAM_PASSWORD_i / MTEAM_TOTP_SECRET_i / MTEAM_API_KEY_i
+#   全局：NOTIFY_SMTP_PASSWORD
+#   env 有非空值时覆盖 TOML；env 空/未设则用 TOML 里的值。
+
+# ── 站点 / 浏览器（一般无需改）────────────────────────────────
+[site]
+base_url = "https://zp.m-team.io"
+api_base_url = "https://api.m-team.cc/api"   # 数据 API 默认 .cc；.io 是镜像
+headless = true
+timeout_ms = 60000
+# auth_dir / log_dir / artifact_dir 默认 data/*，一般不填
+
+# ── 定时调度（全局）───────────────────────────────────────────
+[schedule]
+window = "09:00-11:00"
+pre_delay_range = "10-300"
+heartbeat_hours = 1
+
+# ── SMTP 服务器（全局，所有账户共享；收件人在各账户里）──────────
+# port 465=SSL，587=STARTTLS。password 用授权码而非登录密码。
+# from 只填纯邮箱地址（如 me@foxmail.com）——程序会自动加 "MTeam-CLI <addr>"
+# 显示名；若这里再带显示名会被双重包装导致 QQ/Foxmail 502。
+[smtp]
+host = ""
+port = 465
+user = ""
+password = ""
+from = ""
+use_tls = true
+
+# ── 高分/热门新片摘要（全局默认；账户可用 [account.digest] 覆盖）──
+# 影视（movie/tvshow）有 IMDB → 用 min_imdb 阈值；
+# 其余类型（music/adult…）没有 IMDB → 用 min_seeders（做种数=热度）阈值。
+# 输出：imdb 类按评分降序在前、seeders 类按做种降序在后，整体截断到 limit。
+[digest]
+min_imdb = 8.0
+min_seeders = 30
+types = ["movie", "tvshow"]   # 可选: movie/tvshow/music/adult/waterfall/rss/rankings/all/normal
+hours = 24
+limit = 10
+# 注意：adult 需在 M-Team 个人设置里开启「成人内容浏览」，否则 search 返回 0 条。
+
+# ── 账户（数组，每个 [[account]] 块 = 一个账户）───────────────
+# 凭证相互独立，可只配其一：
+#   保活（login/run/schedule）需 username + password + totp_secret
+#   数据查询（profile/search/…）需 api_key（M-Team 控制台「实验室」生成）
+[[account]]
+username = "user1"
+password = "pass1"
+totp_secret = "totp1"
+api_key = "apikey1"
+digest_enabled = false          # true → 该账户签到通知尾部附当天新片精选（需 api_key）
+
+  # 该账户的通知（各渠道各自 opt-in；都留空 = 不发通知）
+  [account.notify]
+  telegram_token = ""           # token + chat_id 都填才启用 Telegram
+  telegram_chat_id = ""
+  feishu_token = ""             # 飞书 webhook token
+  smtp_to = ""                  # SMTP 收件人（服务器配置见上方 [smtp]）
+
+  # 该账户的 digest 覆盖（可选；只写想改的键，其余继承上面的 [digest]）
+  # [account.digest]
+  # types = ["music"]
+  # min_seeders = 50
+
+# ── 账户 2（按需取消注释）────────────────────────────────────
+# [[account]]
+# username = "user2"
+# api_key = "apikey2"           # 仅数据查询的账户，合法
+#   [account.notify]
+#   smtp_to = ""

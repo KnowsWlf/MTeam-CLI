@@ -19,7 +19,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e .
 playwright install chromium          # only needed for keep-alive (login/run/schedule/inspect)
 
-cp .env.template .env && $EDITOR .env
+cp config.toml.template config.toml && $EDITOR config.toml
 
 # ── automation / diagnostics ──
 mteam-cli doctor                     # sync self-check; no playwright/pyotp/api imports
@@ -43,19 +43,24 @@ mteam-cli digest [--account NAME]
 
 `-f json|yaml|csv` is **pipe-clean** (no banner/footer; logs go to stderr). There is no test suite or linter configured.
 
-## Configuration (env, loaded from `.env` via python-dotenv)
+## Configuration (TOML, `config.toml` via stdlib `tomllib`)
 
-**Everything is per-account — there is NO global config except infra (paths, schedule, base URLs).** Accounts come from numbered vars starting at `_1`, contiguous. The account **name = its username** (`--account <username>`).
+**配置是 TOML 文件**（不是环境变量）。发现顺序：`--config PATH`（顶层全局参数）> `MTEAM_CONFIG` env > `ROOT_DIR/config.toml`。解析层唯一入口 `Settings.from_toml(path)`，生产只在 `cli/main.py` 调一次。见 `config.toml.template`。
 
-Per account `_i`:
-- Credentials (independent sets): `MTEAM_USERNAME_i` + `MTEAM_PASSWORD_i` + `MTEAM_TOTP_SECRET_i` → `can_keepalive`; `MTEAM_API_KEY_i` → `can_query`.
-- **Notify, also per-account** (each channel opts in on its own vars): `NOTIFY_TELEGRAM_TOKEN_i`+`NOTIFY_TELEGRAM_CHAT_ID_i`, `NOTIFY_FEISHU_TOKEN_i`, `NOTIFY_SMTP_TO_i` (`NOTIFY_EMAIL_i` is accepted as an alias for `NOTIFY_SMTP_TO_i`). SMTP *server* is global (`NOTIFY_SMTP_HOST`/`_PORT`/`_USER`/`_PASSWORD`/`_FROM`/`_USE_TLS`, no suffix). Exposed as `Account.has_telegram` / `has_smtp` / `has_feishu`.
+**结构**（每个账户是 `[[account]]` 数组的一个块，不再是扁平 `_i` 后缀）：
+- 全局 table：`[site]`（base_url/api_base_url/headless/timeout_ms）、`[schedule]`（window/pre_delay_range/heartbeat_hours）、`[smtp]`（host/port/user/password/from/use_tls，服务器全局共享）、`[digest]`（min_imdb/min_seeders/types/hours/limit，全局默认）。
+- `[[account]]`：`username`（= 账户名，`--account <username>`）、`password`、`totp_secret`、`api_key`、`digest_enabled`。凭证独立：user+pass+totp → `can_keepalive`；api_key → `can_query`。data-only 或 keepalive-only 账户都合法。
+  - `[account.notify]`：`telegram_token`+`telegram_chat_id`、`feishu_token`、`smtp_to`（各渠道 opt-in）。→ `Account.has_telegram`/`has_smtp`/`has_feishu`。
+  - `[account.digest]`：可选覆盖 `types`/`min_imdb`/`hours`/`limit`/`min_seeders`；缺键 → `None` → 继承 `[digest]`（合并在 `resolved_digest_config`）。
 
-An api-key-only account is valid (data-only); a password+totp-only account is valid (keep-alive-only). The parser stops at the first index with neither username nor api_key. Commands call `require_keepalive` / `require_query` and exit clearly when the needed credential is missing.
+**混合式：密钥可用 env 覆盖**（便于 CI/k8s 注入、明文不入镜像/ConfigMap）。`_env_secret(name)` 读取，「空即不设」（空串不算覆盖），env 非空则盖过 TOML：
+- 账户 i（1-based，按 TOML 数组顺序）：`MTEAM_PASSWORD_i` / `MTEAM_TOTP_SECRET_i` / `MTEAM_API_KEY_i`
+- 全局：`NOTIFY_SMTP_PASSWORD`
+- env 只覆盖既有账户的密钥，**不能新增账户**（结构在 TOML，密钥可外部注入）。
 
-Global infra only: `MTEAM_BASE_URL`, `MTEAM_API_BASE_URL`, `MTEAM_HEADLESS`, `MTEAM_TIMEOUT_MS`, `MTEAM_SCHEDULE_WINDOW` (`09:00-11:00`), `MTEAM_SCHEDULE_PRE_DELAY_RANGE` (`10-300`), `MTEAM_SCHEDULE_HEARTBEAT_HOURS`.
+原生 TOML 类型（bool/int/float/array）免去了旧 env 方案的 `_env_bool`/`_suffixed*`/split 一整套辅助——它们已删除。`_coalesce` 保留（`resolved_digest_config` 仍用，保 `0.0`/`0` 不被吞）。命令用 `ensure_keepalive`/`ensure_query` 在缺凭证时清晰退出。
 
-> Note: the env scheme changed from the legacy script (single-account `MTEAM_USERNAME`, global `TELEGRAM_BOT_TOKEN`/`SMTP_HOST`/`NOTIFY_TYPE`). The new scheme is strictly numbered multi-account, **including notify**. See `.env.template`.
+> Note: 配置方案历经两次演进——legacy 单账户 env → 编号 `_i` 多账户 env → **TOML（0.6.0）**。旧 `.env`/`from_env`/扁平解析已移除；迁移见 `config.toml.template`。**SMTP `from` 仍须纯邮箱地址**（见 Critical constraints）。
 
 ## Architecture
 
@@ -72,7 +77,7 @@ src/mteam_cli/
 **The two faces are strictly separated.** Data commands (`api/` + their command modules) never import Playwright — they call `api.api_post(...)` over urllib, authed either by the account's `api_key` (most endpoints) or by the web-session JWT read from the localStorage snapshot (`hnr`/`messages`; see `api/session.py`). Keep-alive commands (`automation/` + `core/browser.py`) own all the Playwright code. This keeps `doctor` and every data command usable where Chromium isn't installed.
 
 ### `core/`
-- `config.py` — **`Account`** value object (`safe_name`, `storage_path`, `can_keepalive`, `can_query`) + **`Settings`** with `accounts: list[Account]`, `from_env()` (numbered parse), `resolve_account(name)` (None → first). This multi-account `Settings` is the biggest divergence from a single-tenant design.
+- `config.py` — **`Account`** value object (`safe_name`, `storage_path`, `can_keepalive`, `can_query`, `resolved_digest_config`) + **`Settings`** with `accounts: list[Account]`, `from_toml(path)` (TOML parse + env 密钥覆盖via `_env_secret`), `resolve_account(name)` (None → first). `_parse_accounts_toml` reads the `[[account]]` array. This multi-account `Settings` is the biggest divergence from a single-tenant design.
 - `browser.py` — trimmed `BrowserSession`: launch + context + navigation + `snapshot()`. **No state-machine detection, no storage_state injection** (auth lives in localStorage; see `automation/localstorage.py`).
 - `models.py` — `ActionResult`, `CheckinResult`, `SnapshotBundle`.
 
@@ -108,7 +113,7 @@ Verified against M-Team's OpenAPI spec (`https://test2.m-team.cc/api/swagger-ui/
 - **Data ≠ keep-alive identity.** Data commands use `api_key`; keep-alive uses browser session. Don't entangle the two transports.
 - **M-Team API shapes are probe-verified.** When an endpoint differs from `api/public.py`'s current assumption (path/method/body/`code`/fields), fix it there — never spread the assumption into command modules. Re-probe by capturing the SPA's real XHR (DevTools / `page.route`).
 - **localStorage, not storage_state**, is the auth persistence format for M-Team.
-- **NOTIFY_SMTP_FROM must be a bare email address** (e.g. `user@foxmail.com`), NOT `DisplayName <addr>`. The code wraps it into `"MTeam-CLI <{sender}>"` for the From header; if sender already contains a display name, the double-wrapped result (e.g. `MTeam-CLI <MTeam-CLI<addr>>`) is syntactically invalid. smtplib can't extract a clean envelope address, and QQ/Foxmail SMTP returns `502 Invalid paramenters`. This was discovered the hard way: the dev-machine `.env` had a bare address (works); the k8s StatefulSet had a display-name value (502). The symptom on a dev machine with a working config is invisible — test in the real deployment environment.
+- **`[smtp].from` must be a bare email address** (e.g. `user@foxmail.com`), NOT `DisplayName <addr>`. The code wraps it into `"MTeam-CLI <{sender}>"` for the From header; if sender already contains a display name, the double-wrapped result (e.g. `MTeam-CLI <MTeam-CLI<addr>>`) is syntactically invalid. smtplib can't extract a clean envelope address, and QQ/Foxmail SMTP returns `502 Invalid paramenters`. This was discovered the hard way: the dev-machine config had a bare address (works); the deployed config had a display-name value (502). The symptom on a dev machine with a working config is invisible — test in the real deployment environment.
 
 ## Deployment
 
