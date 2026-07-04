@@ -249,3 +249,75 @@ def test_site_defaults(tmp_path):
     assert s.headless is True
     assert s.timeout_ms == 60000
     assert s.schedule_window == "09:00-11:00"
+
+
+# ── 任务 2：混合式 env 密钥覆盖 ──
+
+def test_env_overrides_api_key(tmp_path, monkeypatch):
+    """TOML 有 api_key + env MTEAM_API_KEY_1 → 用 env。"""
+    path = _write(tmp_path, """
+        [[account]]
+        username = "u"
+        api_key = "FROM_TOML"
+    """)
+    monkeypatch.setenv("MTEAM_API_KEY_1", "FROM_ENV")
+    s = Settings.from_toml(path)
+    assert s.accounts[0].api_key == "FROM_ENV"
+
+
+def test_env_overrides_password_and_totp(tmp_path, monkeypatch):
+    path = _write(tmp_path, """
+        [[account]]
+        username = "u"
+        password = "toml_pw"
+        totp_secret = "toml_tt"
+        api_key = "k"
+    """)
+    monkeypatch.setenv("MTEAM_PASSWORD_1", "env_pw")
+    monkeypatch.setenv("MTEAM_TOTP_SECRET_1", "env_tt")
+    s = Settings.from_toml(path)
+    assert s.accounts[0].password == "env_pw"
+    assert s.accounts[0].totp_secret == "env_tt"
+
+
+def test_env_overrides_smtp_password(tmp_path, monkeypatch):
+    path = _write(tmp_path, """
+        [smtp]
+        host = "smtp.qq.com"
+        password = "toml_authcode"
+        [[account]]
+        username = "u"
+        api_key = "k"
+    """)
+    monkeypatch.setenv("NOTIFY_SMTP_PASSWORD", "env_authcode")
+    s = Settings.from_toml(path)
+    assert s.smtp_password == "env_authcode"
+
+
+def test_empty_env_does_not_override(tmp_path, monkeypatch):
+    """env 设为空串 → 不覆盖，仍用 TOML 值（「空即不设」）。"""
+    path = _write(tmp_path, """
+        [[account]]
+        username = "u"
+        api_key = "FROM_TOML"
+    """)
+    monkeypatch.setenv("MTEAM_API_KEY_1", "   ")
+    s = Settings.from_toml(path)
+    assert s.accounts[0].api_key == "FROM_TOML"
+
+
+def test_env_index_matches_toml_order(tmp_path, monkeypatch):
+    """账户 2 的密钥用 _2 后缀，按数组 1-based 序号。"""
+    path = _write(tmp_path, """
+        [[account]]
+        username = "u1"
+        api_key = "toml1"
+
+        [[account]]
+        username = "u2"
+        api_key = "toml2"
+    """)
+    monkeypatch.setenv("MTEAM_API_KEY_2", "env2")
+    s = Settings.from_toml(path)
+    assert s.accounts[0].api_key == "toml1"   # _1 未设 → 用 TOML
+    assert s.accounts[1].api_key == "env2"    # _2 覆盖
