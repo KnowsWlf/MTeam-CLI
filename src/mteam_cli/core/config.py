@@ -40,7 +40,12 @@ def _load_toml(path: Path) -> dict:
 
 
 def _env_secret(name: str) -> str | None:
-    """读密钥 env 覆盖；空/未设 → None（「空即不设」：空串不算覆盖）。"""
+    """读密钥 env 覆盖；空/未设 → None（「空即不设」：空串不算覆盖）。
+
+    有意对所有密钥（含 password）统一 strip：env 注入的首尾空白几乎总是误加
+    （k8s Secret/CI 变量常带换行），裁掉更安全。这与旧 env 方案「password 不
+    strip」不同——刻意统一，password 也不例外。
+    """
     raw = os.getenv(name)
     return raw.strip() if raw and raw.strip() else None
 
@@ -221,13 +226,25 @@ class Settings:
         密钥（password/totp_secret/api_key）可被 env 覆盖：``MTEAM_PASSWORD_i`` 等，
         ``i`` = 数组中的 1-based 序号。env 优先于 TOML 值；env 空/未设则用 TOML。
         """
+        # 结构校验：把常见手误（写成 [account] 单表而非 [[account]] 数组、漏 username）
+        # 变成清晰文案，而非裸 KeyError/AttributeError。
+        if not isinstance(items, list):
+            raise SystemExit(
+                "config.toml 的账户必须是 [[account]] 数组（写成 [account] 单表是常见笔误）。"
+            )
         accounts: list[Account] = []
         for i, a in enumerate(items, start=1):
+            if not isinstance(a, dict):
+                raise SystemExit(f"config.toml 第 {i} 个 [[account]] 格式不对（应是一个表）。")
+            username = a.get("username")
+            if not (isinstance(username, str) and username.strip()):
+                raise SystemExit(f"config.toml 第 {i} 个 [[account]] 缺少 username。")
+            username = username.strip()
             notify = a.get("notify", {})
             adigest = a.get("digest", {})
             accounts.append(
                 Account(
-                    username=a["username"],
+                    username=username,
                     password=_env_secret(f"MTEAM_PASSWORD_{i}") or (a.get("password") or None),
                     totp_secret=_env_secret(f"MTEAM_TOTP_SECRET_{i}") or (a.get("totp_secret") or None),
                     api_key=_env_secret(f"MTEAM_API_KEY_{i}") or (a.get("api_key") or None),

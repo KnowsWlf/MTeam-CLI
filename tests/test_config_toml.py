@@ -354,3 +354,41 @@ def test_missing_file_errors(tmp_path):
     with pytest.raises(SystemExit) as ei:
         Settings.from_toml(missing)
     assert "config.toml.template" in str(ei.value)
+
+
+# ── 账户块结构校验（brooks-review finding 1）──
+
+def test_account_missing_username_errors(tmp_path):
+    """[[account]] 漏 username → 清晰 SystemExit（含序号），而非裸 KeyError。"""
+    path = _write(tmp_path, """
+        [[account]]
+        api_key = "k"
+    """)
+    with pytest.raises(SystemExit) as ei:
+        Settings.from_toml(path)
+    assert "username" in str(ei.value)
+    assert "第 1" in str(ei.value)
+
+
+def test_account_empty_username_errors(tmp_path):
+    """username 为空串 → 同样报错。"""
+    path = _write(tmp_path, """
+        [[account]]
+        username = "  "
+        api_key = "k"
+    """)
+    with pytest.raises(SystemExit) as ei:
+        Settings.from_toml(path)
+    assert "username" in str(ei.value)
+
+
+def test_single_table_account_typo_errors(tmp_path):
+    """误写 [account] 单表而非 [[account]] 数组 → 清晰报错，而非裸 AttributeError。"""
+    path = _write(tmp_path, """
+        [account]
+        username = "u"
+        api_key = "k"
+    """)
+    with pytest.raises(SystemExit) as ei:
+        Settings.from_toml(path)
+    assert "[[account]]" in str(ei.value)
