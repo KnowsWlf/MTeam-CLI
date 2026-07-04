@@ -1,7 +1,7 @@
 services:
 
   mteam-cli:
-    image: bitwild/mteam-cli:${MTEAM_IMAGE_TAG:-latest}
+    image: knowswlf/mteam-cli:${MTEAM_IMAGE_TAG:-latest}
     container_name: mteam-cli
     build:
       context: .

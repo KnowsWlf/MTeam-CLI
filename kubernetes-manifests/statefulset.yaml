@@ -56,7 +56,7 @@ spec:
               mountPath: /app/data
       containers:
         - name: mteam-cli
-          image: bitwild/mteam-cli:latest
+          image: knowswlf/mteam-cli:latest
           imagePullPolicy: IfNotPresent
           command: ["mteam-cli", "schedule"]
           env:

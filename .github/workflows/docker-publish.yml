@@ -1,6 +1,6 @@
 name: Publish Docker image
 
-# Build and push bitwild/mteam-cli to Docker Hub when a version tag is pushed.
+# Build and push knowswlf/mteam-cli to Docker Hub when a version tag is pushed.
 #
 # Release flow:
 #   1. Bump `version` in pyproject.toml
@@ -9,7 +9,7 @@ name: Publish Docker image
 #   image tag, the git tag, and the package version never drift apart.
 #
 # Required repository secrets (Settings → Secrets and variables → Actions):
-#   DOCKERHUB_USERNAME — your Docker Hub username (e.g. bitwild)
+#   DOCKERHUB_USERNAME — your Docker Hub username (e.g. knowswlf)
 #   DOCKERHUB_TOKEN    — a Docker Hub access token with Read/Write scope
 
 on:
@@ -18,7 +18,7 @@ on:
       - "v*"
 
 env:
-  IMAGE_REPO: bitwild/mteam-cli
+  IMAGE_REPO: knowswlf/mteam-cli
   # Opt into Node.js 24 runtime ahead of the June 2026 default switch.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 

@@ -6,8 +6,8 @@
 # in pyproject.toml. This script derives the image tags from it, so to cut a
 # new release you only bump the version there and re-run this script.
 #
-#   bitwild/mteam-cli:<version>   # immutable, e.g. 0.1.0
-#   bitwild/mteam-cli:latest      # moving pointer to the newest build
+#   knowswlf/mteam-cli:<version>   # immutable, e.g. 0.1.0
+#   knowswlf/mteam-cli:latest      # moving pointer to the newest build
 #
 # Usage:
 #   ./scripts/build-and-push.sh                # build + push <version> and latest
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-IMAGE_REPO="${IMAGE_REPO:-bitwild/mteam-cli}"
+IMAGE_REPO="${IMAGE_REPO:-knowswlf/mteam-cli}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
