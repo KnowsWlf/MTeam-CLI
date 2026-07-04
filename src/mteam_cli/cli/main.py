@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+from pathlib import Path
 
 from mteam_cli.core.config import Settings
 from mteam_cli.core.logging_utils import configure_logging
@@ -42,6 +43,13 @@ def build_parser() -> argparse.ArgumentParser:
         prog="mteam-cli",
         description="M-Team CLI — 保活自动化 + AI 友好的数据查询。",
     )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        help="配置文件路径（默认 config.toml；也可用 MTEAM_CONFIG 环境变量指定）",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
     for modname in _COMMAND_MODULES:
         mod = importlib.import_module(f"mteam_cli.cli.commands.{modname}")
@@ -53,7 +61,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    settings = Settings.from_env()
+    settings = Settings.from_toml(args.config)
     settings.ensure_directories()
 
     # ``doctor`` is intentionally sync — it must run even when playwright /

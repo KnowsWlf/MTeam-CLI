@@ -321,3 +321,36 @@ def test_env_index_matches_toml_order(tmp_path, monkeypatch):
     s = Settings.from_toml(path)
     assert s.accounts[0].api_key == "toml1"   # _1 未设 → 用 TOML
     assert s.accounts[1].api_key == "env2"    # _2 覆盖
+
+
+# ── 任务 3：--config 全局参数 + 三级发现 ──
+
+from pathlib import Path
+
+from mteam_cli.core.config import _resolve_config_path
+
+
+def test_resolve_config_path_explicit(monkeypatch):
+    """显式 path 优先，即使 MTEAM_CONFIG 也存在。"""
+    monkeypatch.setenv("MTEAM_CONFIG", "/from/env.toml")
+    assert _resolve_config_path(Path("/explicit.toml")) == Path("/explicit.toml")
+
+
+def test_resolve_config_path_env(monkeypatch):
+    monkeypatch.setenv("MTEAM_CONFIG", "/from/env.toml")
+    assert _resolve_config_path(None) == Path("/from/env.toml")
+
+
+def test_resolve_config_path_default(monkeypatch):
+    monkeypatch.delenv("MTEAM_CONFIG", raising=False)
+    got = _resolve_config_path(None)
+    assert got.name == "config.toml"
+    assert got == config_mod.ROOT_DIR / "config.toml"
+
+
+def test_missing_file_errors(tmp_path):
+    """路径不存在 → SystemExit，提示指向 template。"""
+    missing = tmp_path / "nope.toml"
+    with pytest.raises(SystemExit) as ei:
+        Settings.from_toml(missing)
+    assert "config.toml.template" in str(ei.value)
