@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import logging
+from pathlib import Path
 
 from mteam_cli.automation.runner import _compose_body
 import mteam_cli.automation.runner as runner_mod
@@ -13,7 +14,17 @@ def _logger():
 
 
 def _settings_stub():
-    return Settings.from_env()
+    """最小 Settings（digest 全局默认走字段默认值）；不依赖 env/TOML 文件。"""
+    return Settings(
+        base_url="https://zp.m-team.io",
+        api_base_url="https://api.m-team.cc/api",
+        headless=True,
+        slow_mo_ms=0,
+        timeout_ms=1000,
+        auth_dir=Path("/tmp/mteam-test/auth"),
+        log_dir=Path("/tmp/mteam-test/logs"),
+        artifact_dir=Path("/tmp/mteam-test/artifacts"),
+    )
 
 
 # ── _compose_body：2 参，只看 digest_text 是否非空（无二次开关）──

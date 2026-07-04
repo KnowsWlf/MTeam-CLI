@@ -1,19 +1,17 @@
 """命令层测试：digest 空结果文案（堵回归——曾对 seeders 类型谎报 IMDB）。"""
 
 import asyncio
-import importlib
+import textwrap
 from types import SimpleNamespace
 
-import mteam_cli.core.config as config_mod
+from mteam_cli.core.config import Settings
 import mteam_cli.cli.commands.digest as digest_cmd
 
 
-def _settings(monkeypatch, env):
-    for k, v in env.items():
-        monkeypatch.setenv(k, v)
-    importlib.reload(config_mod)
-    # digest 命令引用的是 config_mod 里的 Settings；reload 后取最新
-    return config_mod.Settings.from_env()
+def _settings(tmp_path, toml_text):
+    p = tmp_path / "config.toml"
+    p.write_text(textwrap.dedent(toml_text), encoding="utf-8")
+    return Settings.from_toml(p)
 
 
 def _args(**over):
@@ -25,13 +23,16 @@ def _args(**over):
     return SimpleNamespace(**base)
 
 
-def test_empty_message_mentions_seeders_for_music(monkeypatch):
+def test_empty_message_mentions_seeders_for_music(tmp_path, monkeypatch):
     """music-only 查询无结果时，文案必须提做种门槛，不能只谎报 IMDB。"""
-    settings = _settings(monkeypatch, {
-        "MTEAM_USERNAME_1": "u1", "MTEAM_API_KEY_1": "k1",
-        "MTEAM_DIGEST_TYPES": "music",
-        "MTEAM_DIGEST_MIN_SEEDERS": "30",
-    })
+    settings = _settings(tmp_path, """
+        [digest]
+        types = ["music"]
+        min_seeders = 30
+        [[account]]
+        username = "u1"
+        api_key = "k1"
+    """)
 
     async def fake_fetch(*a, **k):
         return []

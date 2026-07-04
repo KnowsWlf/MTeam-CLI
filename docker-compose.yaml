@@ -9,48 +9,18 @@ services:
     restart: always
     environment:
       - TZ=Asia/Shanghai
-      - MTEAM_HEADLESS=true
-
-      # ── 多账户：凭证 + 通知，按账户独立（_<n> 后缀）─────────────
-      # 保活需要 USERNAME/PASSWORD/TOTP_SECRET；数据查询需要 API_KEY。
-      - MTEAM_USERNAME_1=user1
-      - MTEAM_PASSWORD_1=pass1
-      - MTEAM_TOTP_SECRET_1=totp1
-      - MTEAM_API_KEY_1=apikey1
-      # 账户 1 的通知（各渠道 opt-in）
-      - NOTIFY_TELEGRAM_TOKEN_1=
-      - NOTIFY_TELEGRAM_CHAT_ID_1=
-      - NOTIFY_FEISHU_TOKEN_1=
-      - NOTIFY_SMTP_TO_1=
-
-      # 账户 2（示例）
-      # - MTEAM_USERNAME_2=user2
-      # - MTEAM_PASSWORD_2=pass2
-      # - MTEAM_TOTP_SECRET_2=totp2
-      # - MTEAM_API_KEY_2=apikey2
-      # - NOTIFY_TELEGRAM_TOKEN_2=
-
-      # ── SMTP 服务器（全局，所有账户共享）───────────────────────
-      - NOTIFY_SMTP_HOST=
-      - NOTIFY_SMTP_PORT=465
-      - NOTIFY_SMTP_USER=
-      - NOTIFY_SMTP_PASSWORD=
-      - NOTIFY_SMTP_FROM=
-      - NOTIFY_SMTP_USE_TLS=true
-
-      # ── 高分新片摘要（按账户开关 + 全局参数）──
-      # - MTEAM_DIGEST_ENABLED_1=true
-      - MTEAM_DIGEST_MIN_IMDB=8.0
-      - MTEAM_DIGEST_TYPES=movie,tvshow
-      - MTEAM_DIGEST_HOURS=24
-      - MTEAM_DIGEST_LIMIT=10
-
-      # ── 定时调度（全局）───────────────────────────────────────
-      - MTEAM_SCHEDULE_WINDOW=09:00-11:00
-      - MTEAM_SCHEDULE_PRE_DELAY_RANGE=10-300
-      - MTEAM_SCHEDULE_HEARTBEAT_HOURS=1
+      # 密钥可选：也可全部写进 config.toml。若想把明文排除在 config.toml 之外，
+      # 在这里（或 .env / compose secrets）注入，env 覆盖同名 TOML 值：
+      # - MTEAM_PASSWORD_1=
+      # - MTEAM_TOTP_SECRET_1=
+      # - MTEAM_API_KEY_1=
+      # - NOTIFY_SMTP_PASSWORD=
 
     volumes:
+      # 配置：把本地 config.toml 挂到容器默认发现路径 /app/config.toml（只读）。
+      # 复制 config.toml.template → config.toml 并填写后再 up。
+      - ./config.toml:/app/config.toml:ro
+      # 持久状态：每账户 localStorage 登录态 + 日志。
       - mteam-data:/app/data
 
     command: ["mteam-cli", "schedule"]

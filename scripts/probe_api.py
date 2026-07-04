@@ -27,6 +27,8 @@ from mteam_cli.automation.login import perform_login
 from mteam_cli.core.browser import BrowserSession
 from mteam_cli.core.config import Account, Settings
 
+_ROOT = Path(__file__).resolve().parents[1]
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("probe")
 
@@ -66,7 +68,18 @@ async def main() -> int:
         print("缺少用户名/密码/TOTP（MTEAM_PROBE_* 或 MTEAM_USERNAME/PASSWORD/TOTP_SECRET）")
         return 2
 
-    settings = Settings.from_env()
+    # 探测脚本自行从 env 取凭证（上方），Settings 仅供 base_url/目录等基础设施，
+    # 故用默认值直接构造（不依赖 config.toml）。
+    settings = Settings(
+        base_url=os.getenv("MTEAM_BASE_URL", "https://zp.m-team.io").rstrip("/"),
+        api_base_url=os.getenv("MTEAM_API_BASE_URL", "https://api.m-team.cc/api").rstrip("/"),
+        headless=os.getenv("MTEAM_HEADLESS", "true").lower() in {"1", "true", "yes", "on"},
+        slow_mo_ms=0,
+        timeout_ms=int(os.getenv("MTEAM_TIMEOUT_MS", "60000")),
+        auth_dir=_ROOT / "data/auth",
+        log_dir=_ROOT / "data/logs",
+        artifact_dir=_ROOT / "data/artifacts",
+    )
     settings.ensure_directories()
     account = Account(username=username, password=password, totp_secret=totp)
 

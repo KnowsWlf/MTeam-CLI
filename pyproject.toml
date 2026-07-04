@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mteam-cli"
-version = "0.5.0"
+version = "0.6.0"
 description = "M-Team CLI — keep-alive automation + AI-friendly data queries."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,7 +14,6 @@ dependencies = [
   "schedule>=1.2,<2",
   "humanize>=4.0,<5",
   "PyYAML>=6.0,<7",
-  "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]

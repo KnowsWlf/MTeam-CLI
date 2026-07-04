@@ -2,52 +2,11 @@ from __future__ import annotations
 
 import os
 import re
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
-
-try:
-    from dotenv import load_dotenv
-
-    env_path = ROOT_DIR / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-except ImportError:  # pragma: no cover
-    pass
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None or not raw.strip():
-        return default
-    return int(raw.strip())
-
-
-def _suffixed(name: str, i: int) -> str | None:
-    raw = os.getenv(f"{name}_{i}")
-    return raw.strip() if raw and raw.strip() else None
-
-
-def _suffixed_int(name: str, i: int) -> int | None:
-    raw = os.getenv(f"{name}_{i}")
-    if raw is None or not raw.strip():
-        return None
-    return int(raw.strip())
-
-
-def _suffixed_float(name: str, i: int) -> float | None:
-    raw = os.getenv(f"{name}_{i}")
-    if raw is None or not raw.strip():
-        return None
-    return float(raw.strip())
 
 
 def _coalesce(value, default):
@@ -57,6 +16,38 @@ def _coalesce(value, default):
     ``or`` 会把它们当假值吞掉。
     """
     return value if value is not None else default
+
+
+def _resolve_config_path(path: Path | None) -> Path:
+    """三级发现：显式 path > ``MTEAM_CONFIG`` env > 默认 ``ROOT_DIR/config.toml``。"""
+    if path is not None:
+        return path
+    env = os.getenv("MTEAM_CONFIG")
+    if env and env.strip():
+        return Path(env.strip())
+    return ROOT_DIR / "config.toml"
+
+
+def _load_toml(path: Path) -> dict:
+    """读并解析 TOML；文件不存在 → 清晰 SystemExit 指向 template。"""
+    if not path.exists():
+        raise SystemExit(
+            f"配置文件不存在：{path}\n"
+            f"请复制 config.toml.template 为 config.toml 并填写（或用 --config/MTEAM_CONFIG 指定路径）。"
+        )
+    with path.open("rb") as f:
+        return tomllib.load(f)
+
+
+def _env_secret(name: str) -> str | None:
+    """读密钥 env 覆盖；空/未设 → None（「空即不设」：空串不算覆盖）。
+
+    有意对所有密钥（含 password）统一 strip：env 注入的首尾空白几乎总是误加
+    （k8s Secret/CI 变量常带换行），裁掉更安全。这与旧 env 方案「password 不
+    strip」不同——刻意统一，password 也不例外。
+    """
+    raw = os.getenv(name)
+    return raw.strip() if raw and raw.strip() else None
 
 
 @dataclass(slots=True, frozen=True)
@@ -119,7 +110,7 @@ class Account:
         if not self.can_keepalive:
             raise SystemExit(
                 f"账户 {self.username!r} 缺少保活所需凭证"
-                f"（需要 MTEAM_USERNAME/PASSWORD/TOTP_SECRET_<n>）。"
+                f"（该 [[account]] 需填 username + password + totp_secret）。"
             )
 
     def ensure_query(self) -> None:
@@ -127,7 +118,7 @@ class Account:
         if not self.can_query:
             raise SystemExit(
                 f"账户 {self.username!r} 未配置 API key。"
-                f"请在 .env 设置对应的 MTEAM_API_KEY_<n>（在 M-Team 控制台生成）。"
+                f"请在 config.toml 该 [[account]] 填 api_key（在 M-Team 控制台生成）。"
             )
 
     @property
@@ -186,80 +177,96 @@ class Settings:
     schedule_heartbeat_hours: int = 1
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_toml(cls, path: Path | None = None) -> "Settings":
+        """从 TOML 文件构造 Settings（密钥可被 env 覆盖，见 _parse_accounts_toml）。
+
+        文件发现三级：显式 path > MTEAM_CONFIG env > ROOT_DIR/config.toml。
+        """
+        data = _load_toml(_resolve_config_path(path))
+        site = data.get("site", {})
+        schedule = data.get("schedule", {})
+        smtp = data.get("smtp", {})
+        digest = data.get("digest", {})
+
+        base_url = str(site.get("base_url", "https://zp.m-team.io")).strip().rstrip("/")
+        api_base_url = str(
+            site.get("api_base_url", "https://api.m-team.cc/api")
+        ).strip().rstrip("/")
+
         return cls(
-            base_url=os.getenv("MTEAM_BASE_URL", "https://zp.m-team.io").strip().rstrip("/"),
-            api_base_url=os.getenv("MTEAM_API_BASE_URL", "https://api.m-team.cc/api").strip().rstrip("/"),
-            headless=_env_bool("MTEAM_HEADLESS", True),
-            slow_mo_ms=_env_int("MTEAM_SLOW_MO_MS", 0),
-            timeout_ms=_env_int("MTEAM_TIMEOUT_MS", 60_000),
-            auth_dir=ROOT_DIR / os.getenv("MTEAM_AUTH_DIR", "data/auth"),
-            log_dir=ROOT_DIR / os.getenv("MTEAM_LOG_DIR", "data/logs"),
-            artifact_dir=ROOT_DIR / os.getenv("MTEAM_ARTIFACT_DIR", "data/artifacts"),
-            accounts=cls._parse_accounts(),
-            smtp_host=os.getenv("NOTIFY_SMTP_HOST", "").strip(),
-            smtp_port=_env_int("NOTIFY_SMTP_PORT", 465),
-            smtp_user=os.getenv("NOTIFY_SMTP_USER", "").strip(),
-            smtp_password=os.getenv("NOTIFY_SMTP_PASSWORD", ""),
-            smtp_from=os.getenv("NOTIFY_SMTP_FROM", "").strip(),
-            smtp_use_tls=_env_bool("NOTIFY_SMTP_USE_TLS", True),
-            digest_min_imdb=float(os.getenv("MTEAM_DIGEST_MIN_IMDB", "8.0")),
-            digest_types=[
-                t.strip()
-                for t in os.getenv("MTEAM_DIGEST_TYPES", "movie,tvshow").split(",")
-                if t.strip()
-            ],
-            digest_hours=_env_int("MTEAM_DIGEST_HOURS", 24),
-            digest_limit=_env_int("MTEAM_DIGEST_LIMIT", 10),
-            digest_min_seeders=_env_int("MTEAM_DIGEST_MIN_SEEDERS", 30),
-            schedule_window=os.getenv("MTEAM_SCHEDULE_WINDOW", "09:00-11:00").strip(),
-            schedule_pre_delay_range=os.getenv("MTEAM_SCHEDULE_PRE_DELAY_RANGE", "10-300").strip(),
-            schedule_heartbeat_hours=_env_int("MTEAM_SCHEDULE_HEARTBEAT_HOURS", 1),
+            base_url=base_url,
+            api_base_url=api_base_url,
+            headless=bool(site.get("headless", True)),
+            slow_mo_ms=int(site.get("slow_mo_ms", 0)),
+            timeout_ms=int(site.get("timeout_ms", 60_000)),
+            auth_dir=ROOT_DIR / str(site.get("auth_dir", "data/auth")),
+            log_dir=ROOT_DIR / str(site.get("log_dir", "data/logs")),
+            artifact_dir=ROOT_DIR / str(site.get("artifact_dir", "data/artifacts")),
+            accounts=cls._parse_accounts_toml(data.get("account", [])),
+            smtp_host=str(smtp.get("host", "")).strip(),
+            smtp_port=int(smtp.get("port", 465)),
+            smtp_user=str(smtp.get("user", "")).strip(),
+            smtp_password=_env_secret("NOTIFY_SMTP_PASSWORD") or str(smtp.get("password", "")),
+            smtp_from=str(smtp.get("from", "")).strip(),
+            smtp_use_tls=bool(smtp.get("use_tls", True)),
+            digest_min_imdb=float(digest.get("min_imdb", 8.0)),
+            digest_types=list(digest.get("types", ["movie", "tvshow"])),
+            digest_hours=int(digest.get("hours", 24)),
+            digest_limit=int(digest.get("limit", 10)),
+            digest_min_seeders=int(digest.get("min_seeders", 30)),
+            schedule_window=str(schedule.get("window", "09:00-11:00")).strip(),
+            schedule_pre_delay_range=str(schedule.get("pre_delay_range", "10-300")).strip(),
+            schedule_heartbeat_hours=int(schedule.get("heartbeat_hours", 1)),
         )
 
     @staticmethod
-    def _parse_accounts() -> list[Account]:
-        accounts: list[Account] = []
-        i = 1
-        while True:
-            username = _suffixed("MTEAM_USERNAME", i)
-            api_key = _suffixed("MTEAM_API_KEY", i)
-            if not username and not api_key:
-                break
-            if not username:
-                i += 1
-                continue
+    def _parse_accounts_toml(items: list[dict]) -> list[Account]:
+        """把 TOML 的 [[account]] 数组解析为 Account 列表。
 
-            smtp_to = _suffixed("NOTIFY_SMTP_TO", i) or _suffixed("NOTIFY_EMAIL", i)
+        密钥（password/totp_secret/api_key）可被 env 覆盖：``MTEAM_PASSWORD_i`` 等，
+        ``i`` = 数组中的 1-based 序号。env 优先于 TOML 值；env 空/未设则用 TOML。
+        """
+        # 结构校验：把常见手误（写成 [account] 单表而非 [[account]] 数组、漏 username）
+        # 变成清晰文案，而非裸 KeyError/AttributeError。
+        if not isinstance(items, list):
+            raise SystemExit(
+                "config.toml 的账户必须是 [[account]] 数组（写成 [account] 单表是常见笔误）。"
+            )
+        accounts: list[Account] = []
+        for i, a in enumerate(items, start=1):
+            if not isinstance(a, dict):
+                raise SystemExit(f"config.toml 第 {i} 个 [[account]] 格式不对（应是一个表）。")
+            username = a.get("username")
+            if not (isinstance(username, str) and username.strip()):
+                raise SystemExit(f"config.toml 第 {i} 个 [[account]] 缺少 username。")
+            username = username.strip()
+            notify = a.get("notify", {})
+            adigest = a.get("digest", {})
             accounts.append(
                 Account(
                     username=username,
-                    password=(os.getenv(f"MTEAM_PASSWORD_{i}") or "") or None,
-                    totp_secret=_suffixed("MTEAM_TOTP_SECRET", i),
-                    api_key=api_key,
-                    telegram_token=_suffixed("NOTIFY_TELEGRAM_TOKEN", i),
-                    telegram_chat_id=_suffixed("NOTIFY_TELEGRAM_CHAT_ID", i),
-                    feishu_token=_suffixed("NOTIFY_FEISHU_TOKEN", i),
-                    smtp_to=smtp_to,
-                    digest_enabled=_env_bool(f"MTEAM_DIGEST_ENABLED_{i}", False),
-                    digest_types=(
-                        [t.strip() for t in raw.split(",") if t.strip()]
-                        if (raw := _suffixed("MTEAM_DIGEST_TYPES", i))
-                        else None
-                    ),
-                    digest_min_imdb=_suffixed_float("MTEAM_DIGEST_MIN_IMDB", i),
-                    digest_hours=_suffixed_int("MTEAM_DIGEST_HOURS", i),
-                    digest_limit=_suffixed_int("MTEAM_DIGEST_LIMIT", i),
-                    digest_min_seeders=_suffixed_int("MTEAM_DIGEST_MIN_SEEDERS", i),
+                    password=_env_secret(f"MTEAM_PASSWORD_{i}") or (a.get("password") or None),
+                    totp_secret=_env_secret(f"MTEAM_TOTP_SECRET_{i}") or (a.get("totp_secret") or None),
+                    api_key=_env_secret(f"MTEAM_API_KEY_{i}") or (a.get("api_key") or None),
+                    telegram_token=notify.get("telegram_token") or None,
+                    telegram_chat_id=notify.get("telegram_chat_id") or None,
+                    feishu_token=notify.get("feishu_token") or None,
+                    smtp_to=notify.get("smtp_to") or None,
+                    digest_enabled=bool(a.get("digest_enabled", False)),
+                    # 原生类型，无需 split / 转换；缺键 → None（继承全局，合并在 resolved_digest_config）
+                    digest_types=adigest.get("types"),
+                    digest_min_imdb=adigest.get("min_imdb"),
+                    digest_hours=adigest.get("hours"),
+                    digest_limit=adigest.get("limit"),
+                    digest_min_seeders=adigest.get("min_seeders"),
                 )
             )
-            i += 1
         return accounts
 
     def resolve_account(self, name: str | None) -> Account:
         if not self.accounts:
             raise SystemExit(
-                "未配置任何账户。请设置 MTEAM_USERNAME_1 / MTEAM_API_KEY_1 等环境变量。"
+                "未配置任何账户。请在 config.toml 添加至少一个 [[account]]（见 config.toml.template）。"
             )
         if name is None:
             return self.accounts[0]
