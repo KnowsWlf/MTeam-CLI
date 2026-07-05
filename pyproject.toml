@@ -4,12 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mteam-cli"
-version = "0.6.0"
+version = "0.6.1"
 description = "M-Team CLI — keep-alive automation + AI-friendly data queries."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "playwright>=1.54,<2.0",
+  # 上界必须锁到与 Dockerfile 基础镜像同一 minor（浏览器二进制按版本钉）：
+  # 镜像 v1.61.0-noble ⟷ 此处 1.61.x。升级二者要一起改。
+  "playwright>=1.61,<1.62",
   "pyotp>=2.9,<3",
   "schedule>=1.2,<2",
   "humanize>=4.0,<5",

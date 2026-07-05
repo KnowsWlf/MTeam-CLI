@@ -1,6 +1,9 @@
 # Playwright-python image ships Chromium + system fonts + zh-CN locale.
-# Pin the tag to match the playwright pip version range in pyproject.toml.
-FROM mcr.microsoft.com/playwright/python:v1.60.0-noble
+# CRITICAL: this tag's minor MUST equal the `playwright` pin in pyproject.toml —
+# the browser binaries are versioned per playwright release, so a pip package
+# ahead of the image (e.g. pip 1.61 on a v1.60 image) fails with "Executable
+# doesn't exist". Bump BOTH together (base tag + pyproject pin).
+FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
 
 # TZ must be set so the `schedule` library interprets HH:MM as Asia/Shanghai,
 # not UTC.
